@@ -235,6 +235,8 @@ if "perfil_cv" in st.session_state:
         value=False, key="perfil_aplicar_obligatoria_edit",
         help="Por defecto NO se carga: en perfiles mixtos una sola palabra obligatoria puede dejar afuera ofertas buenas.",
     )
+    if st.session_state.get("perfil_aplicar_obligatoria_edit"):
+        st.warning("Este filtro puede dejar afuera ofertas compatibles que no usen exactamente esa palabra.")
     st.text_input(
         "Palabras excluidas sugeridas", value=", ".join(perfil["palabras_clave_excluir"]),
         key="perfil_palabras_excluir_edit",
@@ -317,10 +319,14 @@ if buscar:
         st.session_state["resultados_demo"] = (nuevas, acciones_df, datos_resumen)
     else:
         terminos = [t.strip() for t in terminos_busqueda.split(",") if t.strip()]
-        origen_terminos = "manual"
+        # "cv" = el campo estaba vacio, se uso el fallback automatico del
+        # perfil. "campo" = el campo tenia contenido (sea porque el
+        # usuario lo escribio a mano, o porque lo dejo tal cual quedo
+        # pre-cargado por "Usar este perfil para filtros" -- desde el
+        # campo no se puede distinguir esos dos casos, y esta bien
+        # etiquetarlo "editadas por el usuario" en ambos).
+        origen_terminos = "campo" if terminos else None
         if not terminos and "perfil_cv" in st.session_state:
-            # Campo vacio pero hay CV analizado: se usan las sugerencias
-            # generadas del perfil, sin obligar a escribir nada a mano.
             terminos = cv_parser.generar_busquedas_desde_perfil(st.session_state["perfil_cv"])
             origen_terminos = "cv"
         if not terminos:
@@ -331,6 +337,9 @@ if buscar:
                 nuevas, acciones_df, datos_resumen = core.ejecutar_busqueda_real(config_real)
             datos_resumen["terminos_usados"] = terminos
             datos_resumen["origen_terminos"] = origen_terminos
+            datos_resumen["palabras_obligatorias_usadas"] = [
+                p.strip() for p in palabras_obligatorias.split(",") if p.strip()
+            ]
             st.session_state["resultados_demo"] = (nuevas, acciones_df, datos_resumen)
 
 # --- resultados --------------------------------------------------------
@@ -354,9 +363,10 @@ if "resultados_demo" in st.session_state:
         st.caption("Fuente real consultada: Computrabajo. Bumeran e Indeed todavía no están conectados.")
         terminos_usados = datos_resumen.get("terminos_usados") or []
         if terminos_usados:
-            origen = datos_resumen.get("origen_terminos")
-            etiqueta_origen = "sugeridas automáticamente del CV" if origen == "cv" else "escritas manualmente"
-            st.info(f"Búsquedas usadas ({etiqueta_origen}): {', '.join(terminos_usados)}")
+            etiquetas_origen = {"cv": "sugeridas desde el CV", "campo": "editadas por el usuario"}
+            etiqueta_origen = etiquetas_origen.get(datos_resumen.get("origen_terminos"))
+            titulo_busquedas = f"Búsquedas usadas ({etiqueta_origen})" if etiqueta_origen else "Búsquedas usadas"
+            st.info(f"{titulo_busquedas}: {', '.join(terminos_usados)}")
 
     st.subheader(f"Resultados ({len(nuevas)})")
     columnas_mostrar = [
@@ -366,10 +376,20 @@ if "resultados_demo" in st.session_state:
     ]
     if nuevas.empty:
         if datos_resumen.get("modo") == "real":
-            st.warning(
-                "No se encontraron ofertas. Probá ampliar los días, quitar "
-                "palabras obligatorias o usar términos más cortos."
-            )
+            obligatorias_activas = datos_resumen.get("palabras_obligatorias_usadas") or []
+            if obligatorias_activas:
+                st.warning(
+                    "No se encontraron ofertas. El filtro de palabras obligatorias "
+                    "puede estar limitando demasiado la búsqueda. Probá borrar: "
+                    f"{', '.join(obligatorias_activas)}"
+                )
+            else:
+                st.warning(
+                    "No se encontraron ofertas. Probá:\n"
+                    "- Ampliar los días a 30\n"
+                    "- Usar términos más cortos\n"
+                    "- Buscar una categoría por vez"
+                )
         else:
             st.warning("Ningún resultado pasa los filtros actuales. Probá aflojar zona/modalidad/palabras/seniority.")
     else:
