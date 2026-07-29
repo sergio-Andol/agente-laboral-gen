@@ -1,12 +1,16 @@
 """
 Interfaz visual local (Streamlit) para Agente Laboral Gen.
 
-Version demo, generica (sin datos de ningun usuario particular): no hace
-scraping real, no tiene historial, no postula nada. Los datos que se
-muestran salen de core.demo_data.generar_datos_demo() via
-buscador_core.generar_resultados_demo(). El CV se lee en memoria (nunca
-se guarda en disco) y se analiza 100% local por reglas/keywords, sin IA
-ni APIs externas -- ver ui/cv_parser.py.
+Generica (sin datos de ningun usuario particular). Dos modos, elegidos en
+pantalla:
+  - Demo seguro: datos simulados fijos (core.demo_data), sin red.
+  - Busqueda real: consulta Computrabajo en vivo (core.real_search /
+    core.sources.computrabajo) -- solo esa fuente por ahora, ver
+    core/sources/bumeran.py para el motivo de por que Bumeran no esta.
+
+Ningun modo postula, guarda historial ni guarda el CV en disco. El CV se
+lee en memoria y se analiza 100% local por reglas/keywords, sin IA ni
+APIs externas -- ver ui/cv_parser.py.
 
 Correr con:
     streamlit run ui/app.py
@@ -73,12 +77,22 @@ def _aplicar_perfil_a_filtros():
     ubicacion = st.session_state.get("perfil_ubicacion_edit", perfil["ubicacion"])
     zona_match = next((o for o in OPCIONES_ZONA if o.lower() in (ubicacion or "").lower()), "Cualquiera")
     st.session_state["filtro_zona"] = zona_match
+
+    # Puestos/busquedas para modo real: se usa el valor EDITADO del campo
+    # de sugerencias (el usuario pudo haber borrado/agregado algo), no el
+    # perfil crudo -- y pisa lo que haya en la sidebar a proposito (este
+    # boton es "aplicar todo el perfil", el usuario puede reeditar despues).
+    busquedas_sugeridas_texto = st.session_state.get(
+        "perfil_busquedas_edit", ", ".join(cv_parser.generar_busquedas_desde_perfil(perfil))
+    )
+    st.session_state["terminos_busqueda"] = busquedas_sugeridas_texto
+
     st.session_state["perfil_aplicado"] = True
 
     # Los resultados en pantalla son de la busqueda ANTERIOR -- si se
     # dejan, el usuario ve ofertas que ya no deberian pasar los filtros
-    # nuevos hasta que aprete "Buscar ofertas demo" de nuevo. Se limpian
-    # aca para no mostrar datos viejos con filtros nuevos puestos.
+    # nuevos hasta que aprete "Buscar" de nuevo. Se limpian aca para no
+    # mostrar datos viejos con filtros nuevos puestos.
     st.session_state.pop("resultados_demo", None)
 
 
@@ -103,13 +117,33 @@ with st.container(border=True):
         "esta pantalla solo busca y muestra resultados simulados, nunca postula."
     )
 
-st.info(
-    "**Versión demo segura: no postula, no guarda tu CV y no se conecta a portales reales.**\n\n"
-    "- Estos resultados son **simulados** (6 ofertas de ejemplo), no ofertas reales.\n"
-    "- **No** se conecta a ningún portal de empleo (Bumeran, Computrabajo, LinkedIn, etc.).\n"
-    "- **No** guarda ningún historial ni archivo de postulaciones.\n"
-    "- **No** postula ni envía nada — la postulación real no está implementada."
+def _al_cambiar_modo():
+    """Dias por defecto distinto segun modo -- con 2 dias, Búsqueda real
+    devuelve 0 resultados seguido (Computrabajo matchea bastante literal
+    y tiene poco volumen a tan corto plazo). Se resetea al valor
+    sugerido de cada modo al tocar el selector; si el usuario ya habia
+    ajustado el slider a mano y vuelve a tocar el selector, se pisa --
+    tradeoff simple a proposito, evita guardar estado extra."""
+    st.session_state["dias_publicacion"] = 15 if st.session_state.get("modo_busqueda") == "Búsqueda real" else 2
+
+
+modo = st.radio(
+    "Modo", ["Demo seguro", "Búsqueda real"], horizontal=True,
+    key="modo_busqueda", on_change=_al_cambiar_modo,
 )
+
+if modo == "Demo seguro":
+    st.info("Modo demo: resultados simulados para probar la app.")
+else:
+    st.info(
+        "Búsqueda real: consulta portales laborales y muestra ofertas reales. "
+        "La app no postula, no guarda tu CV y no envía mensajes."
+    )
+    st.caption(
+        "Fuente disponible hoy: **Computrabajo**. Bumeran e Indeed no están "
+        "conectados todavía (ver README) — una búsqueda real puede tardar "
+        "varios segundos y depende de que Computrabajo esté accesible."
+    )
 
 # --- subir CV ------------------------------------------------------------
 st.header("Subir CV")
@@ -176,6 +210,13 @@ if "perfil_cv" in st.session_state:
         + (", ".join(perfil["puestos_objetivo"]) if perfil["puestos_objetivo"] else "— (no se detectó categoría clara)")
     )
 
+    busquedas_sugeridas = cv_parser.generar_busquedas_desde_perfil(perfil)
+    st.text_input(
+        "Puestos o búsquedas a consultar (sugeridas, editable)",
+        value=", ".join(busquedas_sugeridas), key="perfil_busquedas_edit",
+        help="Se arman a partir de categorías, skills y seniority objetivo. Borrá o agregá lo que quieras antes de aplicar el perfil.",
+    )
+
     exp_col, edu_col = st.columns(2)
     with exp_col:
         with st.expander("Experiencia detectada (texto crudo)"):
@@ -205,15 +246,30 @@ if "perfil_cv" in st.session_state:
 
 # --- sidebar: filtros -------------------------------------------------------
 st.sidebar.header("Fuentes")
-st.sidebar.caption(
-    "Todavía no hay conexión a portales reales — esta versión solo trabaja "
-    "con las 6 ofertas de ejemplo del modo DEMO."
-)
+if modo == "Demo seguro":
+    st.sidebar.caption(
+        "En modo Demo seguro se usan las 6 ofertas de ejemplo — no se "
+        "conecta a ningún portal."
+    )
+    terminos_busqueda = ""
+else:
+    st.sidebar.caption("Fuente activa: Computrabajo. Bumeran e Indeed no están conectados todavía.")
+    terminos_busqueda = st.sidebar.text_input(
+        "Puestos o búsquedas a consultar (separado por coma)", key="terminos_busqueda",
+        placeholder="ej: power bi, soporte it, analista de datos",
+        help=(
+            "Si subís un CV, la app genera búsquedas sugeridas automáticamente. "
+            "También podés agregar o modificar puestos manualmente. "
+            "Usá términos concretos pero no demasiado largos. Ejemplo: "
+            "'analista funcional', 'soporte it', 'power bi'. La app después "
+            "filtra seniority y descartes."
+        ),
+    )
 
 st.sidebar.header("Filtros")
 zona = st.sidebar.selectbox("Zona", OPCIONES_ZONA, key="filtro_zona")
 modalidad = st.sidebar.selectbox("Modalidad", ["Cualquiera", "Remoto", "Híbrido", "Presencial"])
-dias_publicacion = st.sidebar.slider("Días máximos de publicación", 1, 15, 2)
+dias_publicacion = st.sidebar.slider("Días máximos de publicación", 1, 15, 2, key="dias_publicacion")
 categorias = st.sidebar.multiselect(
     "Categorías", core.categorias_disponibles(), placeholder="Elegir opciones", key="filtro_categorias",
 )
@@ -228,13 +284,21 @@ palabras_excluidas = st.sidebar.text_input(
 )
 max_resultados = st.sidebar.slider("Máximo de resultados", 1, 10, 10)
 
-st.sidebar.caption(
-    "Todos estos filtros son funcionales sobre las 6 ofertas simuladas: "
-    "palabras obligatorias/excluidas, zona, modalidad, categorías, "
-    "seniority y máximo de resultados."
-)
+if modo == "Demo seguro":
+    st.sidebar.caption(
+        "Todos estos filtros son funcionales sobre las 6 ofertas simuladas: "
+        "palabras obligatorias/excluidas, zona, modalidad, categorías, "
+        "seniority y máximo de resultados."
+    )
+else:
+    st.sidebar.caption(
+        "\"Días máximos de publicación\" y \"Máximo de resultados\" se mandan "
+        "directo a Computrabajo. El resto de los filtros se aplica después, "
+        "sobre lo que haya devuelto la búsqueda."
+    )
 
-buscar = st.sidebar.button("Buscar ofertas demo", type="primary")
+etiqueta_boton = "Buscar ofertas demo" if modo == "Demo seguro" else "Buscar ofertas reales"
+buscar = st.sidebar.button(etiqueta_boton, type="primary")
 
 if buscar:
     st.session_state.pop("perfil_aplicado", None)
@@ -247,8 +311,26 @@ if buscar:
         "seniority": seniority,
         "max_resultados": max_resultados,
     }
-    nuevas, acciones_df, datos_resumen = core.generar_resultados_demo(filtros)
-    st.session_state["resultados_demo"] = (nuevas, acciones_df, datos_resumen)
+    if modo == "Demo seguro":
+        nuevas, acciones_df, datos_resumen = core.generar_resultados_demo(filtros)
+        st.session_state["resultados_demo"] = (nuevas, acciones_df, datos_resumen)
+    else:
+        terminos = [t.strip() for t in terminos_busqueda.split(",") if t.strip()]
+        origen_terminos = "manual"
+        if not terminos and "perfil_cv" in st.session_state:
+            # Campo vacio pero hay CV analizado: se usan las sugerencias
+            # generadas del perfil, sin obligar a escribir nada a mano.
+            terminos = cv_parser.generar_busquedas_desde_perfil(st.session_state["perfil_cv"])
+            origen_terminos = "cv"
+        if not terminos:
+            st.sidebar.error("Subí un CV o escribí al menos un puesto para buscar.")
+        else:
+            with st.spinner("Buscando ofertas reales... puede tardar unos minutos."):
+                config_real = dict(filtros, terminos=terminos, dias=dias_publicacion)
+                nuevas, acciones_df, datos_resumen = core.ejecutar_busqueda_real(config_real)
+            datos_resumen["terminos_usados"] = terminos
+            datos_resumen["origen_terminos"] = origen_terminos
+            st.session_state["resultados_demo"] = (nuevas, acciones_df, datos_resumen)
 
 # --- resultados --------------------------------------------------------
 if "resultados_demo" in st.session_state:
@@ -267,6 +349,14 @@ if "resultados_demo" in st.session_state:
     a3.metric("REVISAR MANUALMENTE", conteo_acciones.get("REVISAR MANUALMENTE", 0))
     a4.metric("NO ACCIONAR", conteo_acciones.get("NO ACCIONAR", 0))
 
+    if datos_resumen.get("modo") == "real":
+        st.caption("Fuente real consultada: Computrabajo. Bumeran e Indeed todavía no están conectados.")
+        terminos_usados = datos_resumen.get("terminos_usados") or []
+        if terminos_usados:
+            origen = datos_resumen.get("origen_terminos")
+            etiqueta_origen = "sugeridas automáticamente del CV" if origen == "cv" else "escritas manualmente"
+            st.info(f"Búsquedas usadas ({etiqueta_origen}): {', '.join(terminos_usados)}")
+
     st.subheader(f"Resultados ({len(nuevas)})")
     columnas_mostrar = [
         "titulo", "empresa", "fuente", "ubicacion", "modalidad", "fecha",
@@ -274,7 +364,13 @@ if "resultados_demo" in st.session_state:
         "accion_sugerida", "link",
     ]
     if nuevas.empty:
-        st.warning("Ningún resultado DEMO pasa los filtros actuales. Probá aflojar zona/modalidad/palabras/seniority.")
+        if datos_resumen.get("modo") == "real":
+            st.warning(
+                "No se encontraron ofertas. Probá ampliar los días, quitar "
+                "palabras obligatorias o usar términos más cortos."
+            )
+        else:
+            st.warning("Ningún resultado pasa los filtros actuales. Probá aflojar zona/modalidad/palabras/seniority.")
     else:
         st.dataframe(
             nuevas[columnas_mostrar],
@@ -297,4 +393,4 @@ if "resultados_demo" in st.session_state:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 else:
-    st.caption("Elegí filtros en la barra lateral y apretá \"Buscar ofertas demo\".")
+    st.caption(f"Elegí filtros en la barra lateral y apretá \"{etiqueta_boton}\".")

@@ -16,6 +16,28 @@ _PATRON_SENIORITY_ALTA = re.compile(
     r"\bsemi[-\s]?senior\b|\bsemi\s+s?sr\.?\b|\bsenior\b|\bs?sr\.?\b"
 )
 
+# Veto por RUBRO (RRHH / administracion de personal), no por seniority.
+# A PROPOSITO se chequea SOLO contra el titulo, nunca contra la
+# descripcion completa -- "personal" suelto es una palabra comun en
+# descripciones ("proyecto personal", "equipo personal", "datos
+# personales") que no tiene nada que ver con el rubro de RRHH; en un
+# TITULO de aviso es mucho mas raro que aparezca sin ser justamente un
+# puesto de RRHH/administracion de personal.
+_FRASES_VETO_TITULO = [
+    "administración de personal", "administracion de personal",
+    "recursos humanos", "rrhh", "capital humano",
+    "selección", "seleccion", "reclutamiento", "payroll",
+    "liquidación de sueldos", "liquidacion de sueldos", "sueldos",
+]
+_PATRON_PERSONAL_SUELTO = re.compile(r"\bpersonal\b")
+
+
+def _titulo_vetado(titulo):
+    t = (titulo or "").lower()
+    if any(frase in t for frase in _FRASES_VETO_TITULO):
+        return True
+    return bool(_PATRON_PERSONAL_SUELTO.search(t))
+
 
 def detectar_categoria(texto):
     """Devuelve (categoria, cantidad_de_keywords_matcheadas). Si 2+
@@ -41,11 +63,16 @@ def detectar_categoria(texto):
 
 def clasificar_decision(titulo, descripcion=""):
     """Devuelve (decision_sugerida, motivo). Reglas, en orden:
-    1) seniority alta detectada -> DESCARTAR (esta herramienta apunta a
+    1) rubro RRHH/administracion de personal en el TITULO -> DESCARTAR
+       (proyecto generico, no apunta a ese rubro).
+    2) seniority alta detectada -> DESCARTAR (esta herramienta apunta a
        roles junior/trainee/semi senior).
-    2) sin categoria clara (Otro/Ambiguo) -> DESCARTAR.
-    3) categoria clara con 2+ señales -> POSTULAR.
-    4) categoria clara con 1 señal -> REVISAR (señal debil, ojo humano)."""
+    3) sin categoria clara (Otro/Ambiguo) -> DESCARTAR.
+    4) categoria clara con 2+ señales -> POSTULAR.
+    5) categoria clara con 1 señal -> REVISAR (señal debil, ojo humano)."""
+    if _titulo_vetado(titulo):
+        return "DESCARTAR", "Rubro RRHH/administración de personal detectado en el título."
+
     texto = f"{titulo or ''} {descripcion or ''}".lower()
 
     if _PATRON_SENIORITY_ALTA.search(texto):

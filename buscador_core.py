@@ -11,7 +11,7 @@ import datetime
 
 import pandas as pd
 
-from core import classifier, constants, demo_data, exporter
+from core import classifier, constants, demo_data, exporter, real_search
 
 
 def resumen_seguridad():
@@ -71,13 +71,14 @@ def generar_resultados_demo(filtros=None):
         by=["_orden_decision", "relevancia"], ascending=[True, False]
     ).drop(columns=["_orden_decision"])
 
-    nuevas = _aplicar_filtros_demo(nuevas, filtros or {})
+    nuevas = _aplicar_filtros(nuevas, filtros or {})
 
     acciones_df, conteo_acciones = classifier.construir_acciones(nuevas)
     conteo_decision = nuevas["decision_sugerida"].value_counts().to_dict()
 
     datos_resumen = {
         "fecha_hora": inicio.strftime("%Y-%m-%d %H:%M:%S"),
+        "modo": "demo",
         "cant_resultados": len(nuevas),
         "postular": conteo_decision.get("POSTULAR", 0),
         "revisar": conteo_decision.get("REVISAR", 0),
@@ -87,9 +88,55 @@ def generar_resultados_demo(filtros=None):
     return nuevas, acciones_df, datos_resumen
 
 
-def _aplicar_filtros_demo(nuevas, filtros):
-    """Recorta el DataFrame DEMO segun los filtros de la sidebar. 'fuentes'
-    no se aplica: los 6 avisos DEMO comparten fuente="Demo"."""
+def ejecutar_busqueda_real(config):
+    """Busca ofertas REALES (hoy: solo Computrabajo) y las clasifica con
+    el mismo motor simple que el modo DEMO. Esto SI hace requests de red
+    en vivo -- puede tardar varios segundos, la UI debe envolver el
+    llamado en un spinner.
+
+    'config' (dict):
+      'terminos': lista de strings a buscar (obligatorio, sin esto no hay
+        nada que buscar -- ej. ["analista de datos junior"]).
+      'dias': antiguedad maxima del aviso (default 2).
+      'max_resultados': tope de resultados a traer (default 10).
+      + los mismos filtros post-busqueda que generar_resultados_demo:
+        'palabras_obligatorias', 'palabras_excluidas', 'zona',
+        'modalidad', 'categorias', 'seniority'.
+
+    Sin postulacion, sin historial, sin tocar disco -- exportar_excel()
+    sigue siendo un paso aparte y explicito. Devuelve (nuevas_df,
+    acciones_df, datos_resumen), mismo shape que generar_resultados_demo.
+    """
+    inicio = datetime.datetime.now()
+    terminos = config.get("terminos") or []
+    dias = config.get("dias", 2)
+    max_resultados_busqueda = config.get("max_resultados", 10)
+
+    nuevas = real_search.buscar_ofertas_reales(
+        terminos, dias=dias, max_resultados=max_resultados_busqueda
+    )
+    nuevas = _aplicar_filtros(nuevas, config)
+
+    acciones_df, conteo_acciones = classifier.construir_acciones(nuevas)
+    conteo_decision = nuevas["decision_sugerida"].value_counts().to_dict()
+
+    datos_resumen = {
+        "fecha_hora": inicio.strftime("%Y-%m-%d %H:%M:%S"),
+        "modo": "real",
+        "cant_resultados": len(nuevas),
+        "postular": conteo_decision.get("POSTULAR", 0),
+        "revisar": conteo_decision.get("REVISAR", 0),
+        "descartar": conteo_decision.get("DESCARTAR", 0),
+        "conteo_acciones": conteo_acciones,
+    }
+    return nuevas, acciones_df, datos_resumen
+
+
+def _aplicar_filtros(nuevas, filtros):
+    """Recorta el DataFrame (DEMO o real) segun los filtros de la
+    sidebar. 'fuentes' no se aplica aca: en DEMO los 6 avisos comparten
+    fuente="Demo"; en real, el filtro de fuente ya se resuelve al elegir
+    qué buscar_fn llamar (real_search.FUENTES_DISPONIBLES)."""
     df = nuevas
 
     obligatorias = [p.strip().lower() for p in filtros.get("palabras_obligatorias", []) if p.strip()]

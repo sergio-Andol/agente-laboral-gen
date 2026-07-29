@@ -3,3 +3,6 @@ pandas
 openpyxl
 pypdf
 python-docx
+requests
+beautifulsoup4
+truststore

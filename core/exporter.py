@@ -1,7 +1,7 @@
-"""Exportacion basica a Excel del modo DEMO. Sin logica de postulacion,
-sin historial -- solo vuelca lo que ya se muestra en pantalla, con un
-formato prolijo (freeze, autofiltro, colores por decision, links
-clickeables)."""
+"""Exportacion basica a Excel (modo demo o busqueda real). Sin logica de
+postulacion, sin historial -- solo vuelca lo que ya se muestra en
+pantalla, con un formato prolijo (freeze, autofiltro, colores por
+decision, links clickeables)."""
 import datetime
 from pathlib import Path
 
@@ -17,26 +17,32 @@ _COLORES_DECISION = {
 }
 
 
-def construir_ruta_excel():
+def construir_ruta_excel(prefijo="demo"):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     carpeta_mes = datetime.datetime.now().strftime("%Y-%m")
     base = Path(RESULTADOS_DIR) / carpeta_mes
     base.mkdir(parents=True, exist_ok=True)
-    return base / f"demo_{timestamp}.xlsx"
+    return base / f"{prefijo}_{timestamp}.xlsx"
 
 
 def crear_hoja_resumen(writer, datos_resumen):
     wb = writer.book
     ws = wb.create_sheet("RESUMEN")
 
-    ws["A1"] = "Agente Laboral Gen — Resumen de la búsqueda demo"
+    es_real = datos_resumen.get("modo") == "real"
+    ws["A1"] = f"Agente Laboral Gen — Resumen de la búsqueda {'real' if es_real else 'demo'}"
     ws["A1"].font = Font(bold=True, size=14)
     ws.merge_cells("A1:D1")
 
     etiqueta_font = Font(bold=True)
+    modo_texto = (
+        "BÚSQUEDA REAL — ofertas obtenidas de Computrabajo en vivo"
+        if es_real else
+        "DEMO — datos simulados, sin conexión a portales reales"
+    )
     campos = [
         ("Fecha/hora", datos_resumen["fecha_hora"]),
-        ("Modo", "DEMO — datos simulados, sin conexión a portales reales"),
+        ("Modo", modo_texto),
         ("Ofertas mostradas", datos_resumen["cant_resultados"]),
         ("POSTULAR", datos_resumen["postular"]),
         ("REVISAR", datos_resumen["revisar"]),
@@ -103,8 +109,10 @@ def _formatear_hojas(writer):
 
 def exportar_excel(nuevas, acciones_df, datos_resumen):
     """Escribe RESUMEN + RESULTADOS (+ ACCIONES si hay alguna) en
-    resultados/YYYY-MM/demo_<timestamp>.xlsx. Devuelve la ruta."""
-    archivo = construir_ruta_excel()
+    resultados/YYYY-MM/<prefijo>_<timestamp>.xlsx -- prefijo "demo" o
+    "busqueda_real" segun datos_resumen["modo"]. Devuelve la ruta."""
+    prefijo = "busqueda_real" if datos_resumen.get("modo") == "real" else "demo"
+    archivo = construir_ruta_excel(prefijo=prefijo)
     datos_resumen = dict(datos_resumen, archivo=str(archivo))
 
     with pd.ExcelWriter(archivo, engine="openpyxl") as writer:

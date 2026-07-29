@@ -451,3 +451,94 @@ def analizar_cv(texto):
         "palabras_clave_incluir": palabras_incluir,
         "palabras_clave_excluir": palabras_excluir,
     }
+
+
+# ----------------------------------------------------------------------
+# BUSQUEDAS SUGERIDAS PARA MODO REAL
+# ----------------------------------------------------------------------
+
+def _nivel_para_busqueda(seniority_objetivo):
+    """Palabra de nivel a usar en los terminos de busqueda. Semi Senior
+    solo si es el UNICO nivel objetivo (si tambien incluye Junior/Trainee,
+    ese es el caso mas comun y "junior" sigue siendo la mejor apuesta)."""
+    if "Semi Senior" in seniority_objetivo and "Junior" not in seniority_objetivo and "Trainee" not in seniority_objetivo:
+        return "semi senior"
+    if "Trainee" in seniority_objetivo and "Junior" not in seniority_objetivo:
+        return "trainee"
+    return "junior"
+
+
+def generar_busquedas_desde_perfil(perfil, max_terminos=10):
+    """Arma terminos de busqueda para Computrabajo a partir del perfil
+    del CV, en dos niveles:
+
+    - FLEXIBLES: 1-2 palabras sueltas (ej. "power bi", "soporte it").
+      Computrabajo matchea la frase de forma bastante literal en la URL
+      -- una frase larga tipo "analista de datos junior" + pocos dias de
+      antiguedad devuelve 0 resultados reales seguido. Los flexibles son
+      mucho mas propensos a traer algo.
+    - PRECISAS: la version larga con nivel incluido (ej. "analista de
+      datos junior"). Mas especifica, mas facil que de 0.
+
+    Se devuelve una sola lista, FLEXIBLES PRIMERO (para Computrabajo
+    conviene priorizarlos), precisas despues, deduplicada, con tope de
+    max_terminos (default 10 -- mas que eso tarda demasiado por corrida)."""
+    categorias = perfil.get("categorias_sugeridas") or []
+    skills = [s.lower() for s in (perfil.get("skills") or [])]
+    herramientas = [h.lower() for h in (perfil.get("herramientas") or [])]
+    seniority_objetivo = perfil.get("seniority_objetivo") or []
+    experiencia = (perfil.get("experiencia") or "").lower()
+
+    nivel = _nivel_para_busqueda(seniority_objetivo)
+    precisas, flexibles = [], []
+
+    def agregar_precisas(*frases):
+        for frase in frases:
+            if frase not in precisas:
+                precisas.append(frase)
+
+    def agregar_flexibles(*frases):
+        for frase in frases:
+            if frase not in flexibles:
+                flexibles.append(frase)
+
+    if "Data / BI" in categorias:
+        agregar_precisas(f"analista de datos {nivel}", f"data analyst {nivel}")
+        agregar_flexibles("analista de datos", "data analyst", "power bi", "sql", "reporting")
+
+    if "Desarrollo" in categorias:
+        agregar_precisas(f"desarrollador {nivel}", f"programador {nivel}")
+        agregar_flexibles("desarrollador", "programador", "python", "frontend", "backend", "javascript")
+
+    if "Soporte IT" in categorias:
+        agregar_precisas(f"soporte it {nivel}", f"mesa de ayuda {nivel}")
+        agregar_flexibles("soporte it", "mesa de ayuda", "help desk", "soporte tecnico", "soporte usuarios")
+
+    if "Administrativo / Procesos" in categorias:
+        agregar_precisas(f"analista de procesos {nivel}")
+        agregar_flexibles("analista de procesos", "administrativo sistemas", "back office sistemas")
+
+    hay_erp = any(s in skills for s in ("sap", "erp", "oracle"))
+    if hay_erp:
+        agregar_precisas(f"analista funcional {nivel}", f"soporte erp {nivel}")
+        agregar_flexibles("analista funcional", "soporte erp", "erp", "sap", "oracle", "soporte aplicaciones")
+
+    if any(h in herramientas for h in ("jira", "trello")) or "procesos" in experiencia:
+        agregar_precisas(f"analista funcional {nivel}", f"soporte de aplicaciones {nivel}")
+        agregar_flexibles("analista funcional", "soporte aplicaciones")
+
+    # Supply Chain con puente tecnico real (skills IT/Data detectadas) --
+    # a proposito NUNCA se agrega "supply chain" suelto como termino
+    # principal: eso trae ruido de compras/logistica sin relacion con el
+    # perfil tecnico. Los flexibles son los terminos tecnicos genericos;
+    # "supply chain power bi" queda como precisa/secundaria.
+    if "Supply Chain" in categorias and skills:
+        agregar_flexibles("power bi", "analista de operaciones", "analista de procesos", "reporting")
+        agregar_precisas("supply chain power bi")
+
+    terminos = []
+    for frase in flexibles + precisas:
+        if frase not in terminos:
+            terminos.append(frase)
+
+    return terminos[:max_terminos]

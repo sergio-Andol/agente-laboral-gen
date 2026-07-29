@@ -1,9 +1,12 @@
 # Agente Laboral Gen
 
-Interfaz local (Streamlit) que analiza tu CV y sugiere filtros de búsqueda
-de empleo, con un motor de clasificación simple y transparente por
-reglas/keywords — sin IA externa, sin APIs, sin conexión a portales reales
-todavía.
+Interfaz local (Streamlit) que analiza tu CV y busca ofertas de empleo
+compatibles, con un motor de clasificación simple y transparente por
+reglas/keywords — sin IA externa, sin APIs.
+
+Dos modos, elegibles en pantalla:
+- **Demo seguro**: 6 ofertas de ejemplo fijas, sin red, para probar la app.
+- **Búsqueda real**: consulta Computrabajo en vivo.
 
 ## Qué hace
 
@@ -15,30 +18,39 @@ todavía.
   antes de usarlo.
 - Un botón **"Usar este perfil para filtros"** vuelca esas sugerencias a
   los filtros de búsqueda (categorías, seniority, ubicación, palabras
-  clave).
+  clave, término de búsqueda para modo real).
+- **Búsqueda real en Computrabajo** (`core/sources/computrabajo.py`):
+  requests + BeautifulSoup, sin navegador. Bumeran e Indeed no están
+  conectados todavía — ver "Qué NO hace todavía".
 - Filtros clásicos ajustables a mano: zona, modalidad, categoría,
-  seniority, palabras obligatorias/excluidas, cantidad máxima de
-  resultados.
+  seniority, palabras obligatorias/excluidas, días de publicación,
+  cantidad máxima de resultados.
 - Un motor de clasificación simple (`core/classifier.py`) evalúa cada
   oferta y sugiere **POSTULAR / REVISAR / DESCARTAR** + una acción
   concreta (POSTULAR HOY, REVISAR MANUALMENTE, etc.), con el motivo de la
-  decisión siempre visible.
+  decisión siempre visible. En búsqueda real clasifica solo con el
+  título (Computrabajo no expone la descripción completa en el listado),
+  así que la mayoría de los resultados reales caen en REVISAR más que en
+  POSTULAR — es esperado, no un bug.
 - **Exportación a Excel** con resumen, colores por decisión, links
   clickeables y autofiltro.
 
 ## Qué NO hace todavía
 
-- **No busca en portales reales.** Los resultados vienen de un set fijo
-  de 6 ofertas de ejemplo (modo DEMO) pensado para mostrar cómo funciona
-  el análisis y el filtrado.
-- **No se conecta a Bumeran, Computrabajo, LinkedIn ni ningún otro
-  portal.**
+- **No se conecta a Bumeran, Indeed, LinkedIn ni otros portales** — solo
+  Computrabajo por ahora. Bumeran no está implementado a propósito: 
+  requeriría Playwright (un navegador Chromium real, ~300MB de descarga
+  extra), lo que haría el proyecto mucho más pesado de instalar. Indeed
+  suele bloquear con Cloudflare.
 - **No postula.** No existe ninguna capa de envío de postulaciones — ni
   siquiera simulada.
 - **No guarda historial** de búsquedas ni de ofertas vistas entre
   corridas.
 - No hace OCR: un PDF escaneado (imagen sin texto seleccionable) no se
   puede leer.
+- La búsqueda real puede fallar o devolver menos resultados si
+  Computrabajo cambia su sitio o bloquea el acceso — es un scraper, no
+  una API oficial.
 
 ## Instalación
 
@@ -57,6 +69,9 @@ Dependencias y por qué están:
 | `openpyxl` | exportar a Excel con formato |
 | `pypdf` | leer texto de CVs en PDF |
 | `python-docx` | leer texto de CVs en DOCX |
+| `requests` | pedidos HTTP a Computrabajo (búsqueda real) |
+| `beautifulsoup4` | parsear el HTML de resultados de Computrabajo |
+| `truststore` | usa el almacén de certificados del sistema operativo — evita errores SSL en máquinas con antivirus que inspecciona HTTPS (Norton, etc.) |
 
 ## Cómo ejecutar
 
@@ -76,5 +91,5 @@ no se envía a ninguna API externa ni servicio de IA.
 
 ## Estado
 
-**Versión demo.** Sin scraping real, sin postulación real, sin historial.
-Pensado como base para conectar fuentes reales de búsqueda más adelante.
+**Demo + búsqueda real (solo Computrabajo).** Sin postulación real, sin
+historial. Bumeran e Indeed quedan como pendiente.
