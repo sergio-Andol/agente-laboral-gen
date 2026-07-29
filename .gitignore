@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.env
+resultados/
+
+# CVs subidos / preferencias locales -- no van al repo
+preferencias_ui.json
+perfil_ui.json
+data/cvs/
+uploads/
+*.uploaded.pdf
+*.uploaded.docx
+*.uploaded.txt
