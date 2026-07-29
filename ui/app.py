@@ -242,7 +242,8 @@ if "perfil_cv" in st.session_state:
 
     st.button("Usar este perfil para filtros", on_click=_aplicar_perfil_a_filtros)
     if st.session_state.get("perfil_aplicado"):
-        st.success("Filtros actualizados. Volvé a ejecutar la búsqueda demo.")
+        etiqueta_modo = "demo" if modo == "Demo seguro" else "real"
+        st.success(f"Filtros actualizados. Volvé a ejecutar la búsqueda {etiqueta_modo}.")
 
 # --- sidebar: filtros -------------------------------------------------------
 st.sidebar.header("Fuentes")

@@ -112,6 +112,10 @@ def ejecutar_busqueda_real(config):
     dias = config.get("dias", 2)
     max_resultados_busqueda = config.get("max_resultados", 10)
 
+    # Orden del pipeline, a proposito: buscar -> normalizar -> CLASIFICAR
+    # (categoria_detectada/decision_sugerida/motivo_decision/accion_sugerida,
+    # dentro de real_search.buscar_ofertas_reales) -> reciendespues filtrar.
+    # _aplicar_filtros() nunca debe correr sobre datos sin clasificar.
     nuevas = real_search.buscar_ofertas_reales(
         terminos, dias=dias, max_resultados=max_resultados_busqueda
     )
@@ -136,35 +140,47 @@ def _aplicar_filtros(nuevas, filtros):
     """Recorta el DataFrame (DEMO o real) segun los filtros de la
     sidebar. 'fuentes' no se aplica aca: en DEMO los 6 avisos comparten
     fuente="Demo"; en real, el filtro de fuente ya se resuelve al elegir
-    qué buscar_fn llamar (real_search.FUENTES_DISPONIBLES)."""
+    qué buscar_fn llamar (real_search.FUENTES_DISPONIBLES).
+
+    Defensivo a proposito: si al DataFrame le falta alguna columna que
+    un filtro necesita (ej. categoria_detectada, si algun dia se cambia
+    el pipeline y se llega a llamar esta funcion antes de clasificar),
+    ese filtro puntual se salta en vez de romper con KeyError -- se
+    imprime un aviso interno, no se corta la corrida entera."""
     df = nuevas
 
+    def _tiene_columna(nombre):
+        if nombre in df.columns:
+            return True
+        print(f"[_aplicar_filtros] falta la columna '{nombre}' -- se salta ese filtro.")
+        return False
+
     obligatorias = [p.strip().lower() for p in filtros.get("palabras_obligatorias", []) if p.strip()]
-    if obligatorias:
+    if obligatorias and _tiene_columna("titulo"):
         texto = df["titulo"].fillna("").str.lower()
         df = df[texto.apply(lambda t: all(p in t for p in obligatorias))]
 
     excluidas = [p.strip().lower() for p in filtros.get("palabras_excluidas", []) if p.strip()]
-    if excluidas:
+    if excluidas and _tiene_columna("titulo"):
         texto = df["titulo"].fillna("").str.lower()
         df = df[~texto.apply(lambda t: any(p in t for p in excluidas))]
 
     zona = (filtros.get("zona") or "").strip().lower()
-    if zona and zona != "cualquiera":
+    if zona and zona != "cualquiera" and _tiene_columna("ubicacion"):
         df = df[df["ubicacion"].fillna("").str.lower().str.contains(zona, regex=False)]
 
     modalidad = (filtros.get("modalidad") or "").strip().lower()
-    if modalidad and modalidad != "cualquiera":
+    if modalidad and modalidad != "cualquiera" and _tiene_columna("modalidad"):
         df = df[df["modalidad"].fillna("").str.lower() == modalidad]
 
     categorias = filtros.get("categorias") or []
-    if categorias:
+    if categorias and _tiene_columna("categoria_detectada"):
         df = df[df["categoria_detectada"].isin(categorias)]
 
     # OR, no AND: alcanza con que el titulo tenga alguna de las
     # seniorities elegidas.
     seniority = [s.strip().lower() for s in filtros.get("seniority", []) if s.strip()]
-    if seniority:
+    if seniority and _tiene_columna("titulo"):
         texto = df["titulo"].fillna("").str.lower()
         df = df[texto.apply(lambda t: any(s in t for s in seniority))]
 
