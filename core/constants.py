@@ -59,6 +59,24 @@ CATEGORIAS_KEYWORDS = {
 CATEGORIA_OTRO = "Otro"
 CATEGORIA_AMBIGUO = "Ambiguo"
 
+# Zonas ofrecidas en la UI -> (slug para la URL de Computrabajo,
+# texto para filtrar la columna 'ubicacion' de los resultados despues).
+# "Toda Argentina" tiene slug_computrabajo="" a proposito: eso arma la
+# URL SIN sufijo de ciudad (/trabajo-de-{query}, en vez de
+# /trabajo-de-{query}-en-capital-federal), que es lo que hace que
+# Computrabajo busque en todo el pais en vez de acotar solo a CABA.
+# Confirmado en vivo (2026) que estos slugs devuelven resultados reales:
+# capital-federal, buenos-aires, cordoba, santa-fe, mendoza.
+ZONAS = {
+    "Toda Argentina": {"slug_computrabajo": "", "texto_filtro": ""},
+    "CABA": {"slug_computrabajo": "capital-federal", "texto_filtro": "capital federal"},
+    "Buenos Aires": {"slug_computrabajo": "buenos-aires", "texto_filtro": "buenos aires"},
+    "Córdoba": {"slug_computrabajo": "cordoba", "texto_filtro": "córdoba"},
+    "Santa Fe": {"slug_computrabajo": "santa-fe", "texto_filtro": "santa fe"},
+    "Mendoza": {"slug_computrabajo": "mendoza", "texto_filtro": "mendoza"},
+}
+OPCIONES_ZONA = list(ZONAS.keys())
+
 COLUMNAS = ["titulo", "empresa", "ubicacion", "modalidad", "fecha", "link", "busqueda", "fuente"]
 
 ORDEN_DECISION = {"POSTULAR": 0, "REVISAR": 1, "DESCARTAR": 2}

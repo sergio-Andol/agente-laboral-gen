@@ -100,11 +100,13 @@ def _parse_tarjeta(art, query):
     )
 
 
-def buscar(query, dias=2, ciudad="capital-federal", max_paginas=3, max_resultados=20, **_kwargs):
+def buscar(query, dias=2, ciudad="", max_paginas=3, max_resultados=20, **_kwargs):
     """Busca 'query' en Computrabajo.
 
     dias: antiguedad maxima del aviso (parametro 'pubdate' del sitio).
-    ciudad: filtro de ciudad en la URL ("" = todo el pais).
+    ciudad: slug de ciudad para la URL, ej. "capital-federal" ("" = todo
+      el pais -- default a proposito, para que "Toda Argentina" en la UI
+      realmente busque en todo el pais y no solo en Capital Federal).
     max_paginas: tope de SEGURIDAD (no de resultados esperados) -- corta
       solo si el sitio devuelve pagina vacia o repetida, evita loop
       infinito si algo falla.

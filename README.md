@@ -6,7 +6,7 @@ reglas/keywords — sin IA externa, sin APIs.
 
 Dos modos, elegibles en pantalla:
 - **Demo seguro**: 6 ofertas de ejemplo fijas, sin red, para probar la app.
-- **Búsqueda real**: consulta Computrabajo en vivo.
+- **Búsqueda real**: consulta Computrabajo en vivo (siempre) y Bumeran (opcional, si tenés Playwright instalado).
 
 ## Qué hace
 
@@ -20,8 +20,15 @@ Dos modos, elegibles en pantalla:
   los filtros de búsqueda (categorías, seniority, ubicación, palabras
   clave, término de búsqueda para modo real).
 - **Búsqueda real en Computrabajo** (`core/sources/computrabajo.py`):
-  requests + BeautifulSoup, sin navegador. Bumeran e Indeed no están
-  conectados todavía — ver "Qué NO hace todavía".
+  requests + BeautifulSoup, sin navegador. Activa por defecto.
+- **Búsqueda real en Bumeran, opcional** (`core/sources/bumeran.py`):
+  usa un navegador real (Playwright + Chromium) porque Bumeran hidrata
+  el listado con JavaScript — no hay forma de leerlo solo con
+  requests/BeautifulSoup como Computrabajo. Se activa con un checkbox
+  aparte en la sidebar (desactivado por defecto). Si Playwright no está
+  instalado, la app no se rompe: muestra un aviso y sigue con las demás
+  fuentes activas. Indeed no está conectado todavía (bloquea con
+  Cloudflare) — ver "Qué NO hace todavía".
 - Filtros clásicos ajustables a mano: zona, modalidad, categoría,
   seniority, palabras obligatorias/excluidas, días de publicación,
   cantidad máxima de resultados.
@@ -37,20 +44,21 @@ Dos modos, elegibles en pantalla:
 
 ## Qué NO hace todavía
 
-- **No se conecta a Bumeran, Indeed, LinkedIn ni otros portales** — solo
-  Computrabajo por ahora. Bumeran no está implementado a propósito: 
-  requeriría Playwright (un navegador Chromium real, ~300MB de descarga
-  extra), lo que haría el proyecto mucho más pesado de instalar. Indeed
-  suele bloquear con Cloudflare.
+- **No se conecta a Indeed ni LinkedIn** — Indeed suele bloquear con
+  Cloudflare, no está implementado.
+- **Bumeran no verifica si la postulación es externa** (a otro portal
+  tipo ZonaJobs) — el scraper del proyecto personal en el que se basó
+  esto sí lo hace, pero exige abrir el detalle de cada aviso (mucho más
+  lento). Se dejó afuera a propósito para una fuente opcional.
 - **No postula.** No existe ninguna capa de envío de postulaciones — ni
   siquiera simulada.
 - **No guarda historial** de búsquedas ni de ofertas vistas entre
   corridas.
 - No hace OCR: un PDF escaneado (imagen sin texto seleccionable) no se
   puede leer.
-- La búsqueda real puede fallar o devolver menos resultados si
-  Computrabajo cambia su sitio o bloquea el acceso — es un scraper, no
-  una API oficial.
+- La búsqueda real puede fallar o devolver menos resultados si los
+  sitios cambian su markup o bloquean el acceso — son scrapers, no APIs
+  oficiales.
 
 ## Instalación
 
@@ -73,6 +81,22 @@ Dependencias y por qué están:
 | `beautifulsoup4` | parsear el HTML de resultados de Computrabajo |
 | `truststore` | usa el almacén de certificados del sistema operativo — evita errores SSL en máquinas con antivirus que inspecciona HTTPS (Norton, etc.) |
 
+### Bumeran (opcional)
+
+Computrabajo funciona sin nada más. Si además querés usar Bumeran como
+fuente, instalá Playwright y su navegador Chromium (esto no está en
+`requirements.txt` a propósito — agrega ~300MB de descarga, y no todos
+los que prueben la app van a querer eso):
+
+```bash
+pip install playwright
+py -3.14 -m playwright install chromium
+```
+
+Si Bumeran está tildado en la sidebar pero Playwright no está instalado,
+la app **no se rompe**: muestra un aviso, y sigue mostrando resultados de
+las demás fuentes activas.
+
 ## Cómo ejecutar
 
 ```bash
@@ -91,5 +115,5 @@ no se envía a ninguna API externa ni servicio de IA.
 
 ## Estado
 
-**Demo + búsqueda real (solo Computrabajo).** Sin postulación real, sin
-historial. Bumeran e Indeed quedan como pendiente.
+**Demo + búsqueda real (Computrabajo + Bumeran opcional).** Sin
+postulación real, sin historial. Indeed queda como pendiente.

@@ -90,9 +90,11 @@ def generar_resultados_demo(filtros=None):
 
 
 def ejecutar_busqueda_real(config):
-    """Busca ofertas REALES (hoy: solo Computrabajo) y las clasifica con
-    el mismo motor simple que el modo DEMO. Esto SI hace requests de red
-    en vivo -- puede tardar varios segundos, la UI debe envolver el
+    """Busca ofertas REALES (Computrabajo siempre; Bumeran si esta en
+    'fuentes' Y Playwright esta disponible) y las clasifica con el mismo
+    motor simple que el modo DEMO. Esto SI hace requests de red en vivo
+    -- puede tardar varios segundos (mas si Bumeran esta activo: usa un
+    navegador real, no solo requests HTTP), la UI debe envolver el
     llamado en un spinner.
 
     'config' (dict):
@@ -100,6 +102,11 @@ def ejecutar_busqueda_real(config):
         nada que buscar -- ej. ["analista de datos junior"]).
       'dias': antiguedad maxima del aviso (default 2).
       'max_resultados': tope de resultados a traer (default 10).
+      'fuentes': lista de nombres de real_search.FUENTES_DISPONIBLES a
+        usar (default: todas, o sea Computrabajo + Bumeran). Si Bumeran
+        esta en la lista pero Playwright no esta instalado, esa fuente
+        se salta sola (no rompe la busqueda) y el aviso queda en
+        datos_resumen['avisos_fuentes'].
       + los mismos filtros post-busqueda que generar_resultados_demo:
         'palabras_obligatorias', 'palabras_excluidas', 'zona',
         'modalidad', 'categorias', 'seniority'.
@@ -112,14 +119,22 @@ def ejecutar_busqueda_real(config):
     terminos = config.get("terminos") or []
     dias = config.get("dias", 2)
     max_resultados_busqueda = config.get("max_resultados", 10)
+    fuentes = config.get("fuentes")
+    zona = config.get("zona") or "Toda Argentina"
+    ciudad = constants.ZONAS.get(zona, {}).get("slug_computrabajo", "")
 
     # Orden del pipeline, a proposito: buscar crudos ampliados ->
     # normalizar -> DEDUPLICAR -> CLASIFICAR (categoria_detectada/
     # decision_sugerida/motivo_decision/accion_sugerida, todo dentro de
     # real_search.buscar_ofertas_reales) -> recien despues filtrar.
     # _aplicar_filtros() nunca debe correr sobre datos sin clasificar.
+    # 'ciudad' llega vacio ("") cuando zona="Toda Argentina" -- eso hace
+    # que Computrabajo busque en TODO el pais (ver core/sources/
+    # computrabajo.py), en vez de acotar solo a Capital Federal como
+    # hacia antes por el default viejo de esa funcion.
     nuevas, diagnostico_busqueda = real_search.buscar_ofertas_reales(
-        terminos, dias=dias, max_resultados=max_resultados_busqueda
+        terminos, dias=dias, max_resultados=max_resultados_busqueda,
+        fuentes=fuentes, ciudad=ciudad,
     )
     cant_tras_dedupe = len(nuevas)
     nuevas = _aplicar_filtros(nuevas, config)
@@ -134,6 +149,9 @@ def ejecutar_busqueda_real(config):
         "cant_crudo": diagnostico_busqueda.get("cant_crudo", 0),
         "cant_tras_dedupe": cant_tras_dedupe,
         "cant_tras_filtros": len(nuevas),
+        "conteo_por_fuente": diagnostico_busqueda.get("conteo_por_fuente", {}),
+        "avisos_fuentes": diagnostico_busqueda.get("avisos_fuentes", []),
+        "alcance_geografico": zona,
         "postular": conteo_decision.get("POSTULAR", 0),
         "revisar": conteo_decision.get("REVISAR", 0),
         "descartar": conteo_decision.get("DESCARTAR", 0),
@@ -171,9 +189,17 @@ def _aplicar_filtros(nuevas, filtros):
         texto = df["titulo"].fillna("").str.lower()
         df = df[~texto.apply(lambda t: any(p in t for p in excluidas))]
 
-    zona = (filtros.get("zona") or "").strip().lower()
-    if zona and zona != "cualquiera" and _tiene_columna("ubicacion"):
-        df = df[df["ubicacion"].fillna("").str.lower().str.contains(zona, regex=False)]
+    # "Toda Argentina"/"Cualquiera"/vacio = sin filtro de ubicacion. Para
+    # una zona especifica, NO se busca el nombre de la zona tal cual
+    # (ej. "caba") como substring -- Computrabajo nunca devuelve "CABA"
+    # en la ubicacion, devuelve "Capital Federal". Se usa el texto real
+    # mapeado en core.constants.ZONAS.
+    zona_cruda = filtros.get("zona") or ""
+    zona_normalizada = zona_cruda.strip().lower()
+    if zona_normalizada and zona_normalizada not in ("cualquiera", "toda argentina") and _tiene_columna("ubicacion"):
+        texto_filtro = (constants.ZONAS.get(zona_cruda, {}).get("texto_filtro") or zona_normalizada).lower()
+        if texto_filtro:
+            df = df[df["ubicacion"].fillna("").str.lower().str.contains(texto_filtro, regex=False)]
 
     modalidad = (filtros.get("modalidad") or "").strip().lower()
     if modalidad and modalidad != "cualquiera" and _tiene_columna("modalidad"):

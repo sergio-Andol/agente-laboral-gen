@@ -4,9 +4,10 @@ Interfaz visual local (Streamlit) para Agente Laboral Gen.
 Generica (sin datos de ningun usuario particular). Dos modos, elegidos en
 pantalla:
   - Demo seguro: datos simulados fijos (core.demo_data), sin red.
-  - Busqueda real: consulta Computrabajo en vivo (core.real_search /
-    core.sources.computrabajo) -- solo esa fuente por ahora, ver
-    core/sources/bumeran.py para el motivo de por que Bumeran no esta.
+  - Busqueda real: Computrabajo activo por defecto (requests, sin
+    navegador); Bumeran opcional via checkbox (requiere Playwright +
+    Chromium, ver core/sources/bumeran.py); Indeed no conectado
+    todavia (bloquea con Cloudflare).
 
 Ningun modo postula, guarda historial ni guarda el CV en disco. El CV se
 lee en memoria y se analiza 100% local por reglas/keywords, sin IA ni
@@ -31,10 +32,14 @@ os.chdir(PROJECT_ROOT)
 
 import buscador_core as core  # noqa: E402  (import despues del sys.path fix, a proposito)
 import cv_parser  # noqa: E402  (ui/cv_parser.py, mismo directorio que este archivo)
+from core import constants  # noqa: E402
 
 st.set_page_config(page_title="Agente Laboral Gen", layout="wide")
 
-OPCIONES_ZONA = ["Cualquiera", "CABA", "GBA", "Buenos Aires"]
+# "Toda Argentina" primera a proposito: es el default (index 0 de un
+# selectbox sin key todavia en session_state). Mismo listado que usa
+# buscador_core para armar la URL de Computrabajo -- ver core/constants.py.
+OPCIONES_ZONA = constants.OPCIONES_ZONA
 OPCIONES_SENIORITY = ["Junior", "Trainee", "Semi Senior"]
 
 
@@ -75,7 +80,7 @@ def _aplicar_perfil_a_filtros():
     st.session_state["filtro_palabras_excluidas"] = palabras_excluir_texto
 
     ubicacion = st.session_state.get("perfil_ubicacion_edit", perfil["ubicacion"])
-    zona_match = next((o for o in OPCIONES_ZONA if o.lower() in (ubicacion or "").lower()), "Cualquiera")
+    zona_match = next((o for o in OPCIONES_ZONA if o.lower() in (ubicacion or "").lower()), "Toda Argentina")
     st.session_state["filtro_zona"] = zona_match
 
     # Puestos/busquedas para modo real: se usa el valor EDITADO del campo
@@ -144,9 +149,10 @@ else:
         "La app no postula, no guarda tu CV y no envía mensajes."
     )
     st.caption(
-        "Fuente disponible hoy: **Computrabajo**. Bumeran e Indeed no están "
-        "conectados todavía (ver README) — una búsqueda real puede tardar "
-        "varios segundos y depende de que Computrabajo esté accesible."
+        "**Computrabajo** activo por defecto. **Bumeran** opcional (tildalo en "
+        "\"Fuentes\" — requiere Playwright/Chromium, ver README). Indeed no "
+        "conectado todavía. Una búsqueda real puede tardar varios segundos, "
+        "más si Bumeran está activo."
     )
 
 # --- subir CV ------------------------------------------------------------
@@ -259,8 +265,21 @@ if modo == "Demo seguro":
         "conecta a ningún portal."
     )
     terminos_busqueda = ""
+    fuentes_activas = []
 else:
-    st.sidebar.caption("Fuente activa: Computrabajo. Bumeran e Indeed no están conectados todavía.")
+    usar_computrabajo = st.sidebar.checkbox("Computrabajo", value=True, key="usar_computrabajo")
+    usar_bumeran = st.sidebar.checkbox(
+        "Bumeran (opcional)", value=False, key="usar_bumeran",
+        help=(
+            "Requiere Playwright + Chromium instalados (ver README). Usa un "
+            "navegador real, no solo requests HTTP -- más lento que Computrabajo, "
+            "suma tiempo extra a la búsqueda."
+        ),
+    )
+    st.sidebar.checkbox("Indeed", value=False, disabled=True, help="No conectado todavía: suele bloquear con Cloudflare.")
+    fuentes_activas = [n for n, activa in (("Computrabajo", usar_computrabajo), ("Bumeran", usar_bumeran)) if activa]
+    if not fuentes_activas:
+        st.sidebar.warning("Elegí al menos una fuente para poder buscar.")
     terminos_busqueda = st.sidebar.text_input(
         "Puestos o búsquedas a consultar (separado por coma)", key="terminos_busqueda",
         placeholder="ej: power bi, soporte it, analista de datos",
@@ -336,9 +355,14 @@ if buscar:
             origen_terminos = "cv"
         if not terminos:
             st.sidebar.error("Subí un CV o escribí al menos un puesto para buscar.")
+        elif not fuentes_activas:
+            st.sidebar.error("Elegí al menos una fuente (Computrabajo y/o Bumeran) para buscar.")
         else:
-            with st.spinner("Buscando ofertas reales... puede tardar unos minutos."):
-                config_real = dict(filtros, terminos=terminos, dias=dias_publicacion)
+            spinner_texto = "Buscando ofertas reales... puede tardar unos minutos."
+            if "Bumeran" in fuentes_activas:
+                spinner_texto = "Buscando ofertas reales (Bumeran usa un navegador real, puede tardar más)..."
+            with st.spinner(spinner_texto):
+                config_real = dict(filtros, terminos=terminos, dias=dias_publicacion, fuentes=fuentes_activas)
                 nuevas, acciones_df, datos_resumen = core.ejecutar_busqueda_real(config_real)
             datos_resumen["terminos_usados"] = terminos
             datos_resumen["origen_terminos"] = origen_terminos
@@ -366,7 +390,22 @@ if "resultados_demo" in st.session_state:
     a4.metric("NO ACCIONAR", conteo_acciones.get("NO ACCIONAR", 0))
 
     if datos_resumen.get("modo") == "real":
-        st.caption("Fuente real consultada: Computrabajo. Bumeran e Indeed todavía no están conectados.")
+        st.caption(f"Alcance geográfico: {datos_resumen.get('alcance_geografico', 'Toda Argentina')}")
+        conteo_por_fuente = datos_resumen.get("conteo_por_fuente") or {}
+        if conteo_por_fuente:
+            desglose = ", ".join(f"{fuente}: {cant}" for fuente, cant in conteo_por_fuente.items())
+            st.caption(f"Fuentes reales consultadas — {desglose}. Indeed todavía no está conectado.")
+        else:
+            st.caption("Ninguna fuente devolvió resultados. Computrabajo activo por defecto, Bumeran opcional (si lo tildaste). Indeed no conectado todavía.")
+        avisos_fuentes = datos_resumen.get("avisos_fuentes") or []
+        if avisos_fuentes:
+            st.warning(
+                "Bumeran no respondió o Playwright no está disponible. "
+                "Se muestran resultados de las demás fuentes."
+            )
+            with st.expander("Detalle del aviso"):
+                for aviso in avisos_fuentes:
+                    st.caption(aviso)
         st.caption(
             f"Ofertas encontradas: {datos_resumen.get('cant_crudo', 0)} crudas → "
             f"{datos_resumen.get('cant_tras_dedupe', 0)} únicas (sin duplicados) → "

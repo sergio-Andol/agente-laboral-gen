@@ -1,6 +1,7 @@
-"""Orquesta la busqueda REAL: combina fuentes activas (hoy: solo
-Computrabajo), clasifica cada oferta con core.classifier -- el mismo
-motor simple que usa el modo DEMO -- y arma el DataFrame final.
+"""Orquesta la busqueda REAL: combina fuentes activas (Computrabajo
+siempre, Bumeran si esta seleccionado Y Playwright disponible), clasifica
+cada oferta con core.classifier -- el mismo motor simple que usa el modo
+DEMO -- y arma el DataFrame final.
 
 Sin postulacion, sin historial, sin guardar nada en disco. Cada llamada a
 buscar_ofertas_reales() es una consulta de red en vivo -- puede tardar
@@ -15,7 +16,7 @@ import re
 import pandas as pd
 
 from core import classifier, constants
-from core.sources import computrabajo
+from core.sources import bumeran, computrabajo
 
 COLUMNAS_RESULTADO = constants.COLUMNAS + [
     "categoria_detectada", "decision_sugerida", "motivo_decision", "accion_sugerida",
@@ -23,10 +24,10 @@ COLUMNAS_RESULTADO = constants.COLUMNAS + [
 ]
 
 # Nombre visible -> funcion buscar(query, dias=, max_resultados=) -> list[dict].
-# Bumeran no esta aca: core.sources.bumeran.buscar() existe pero lanza
-# NotImplementedError a proposito (ver ese archivo).
+# Indeed no esta aca: bloquea con Cloudflare, no implementado.
 FUENTES_DISPONIBLES = {
     "Computrabajo": computrabajo.buscar,
+    "Bumeran": bumeran.buscar,
 }
 
 
@@ -89,16 +90,22 @@ def _deduplicar(df):
     return df, cantidad_antes
 
 
-def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None):
+def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None, ciudad=""):
     """terminos: lista de strings a buscar (se consulta cada uno por
     separado). fuentes: lista de nombres de FUENTES_DISPONIBLES a usar
-    (default: todas las disponibles hoy, o sea Computrabajo).
+    (default: todas las disponibles hoy, o sea Computrabajo + Bumeran).
+    ciudad: slug de ciudad para Computrabajo ("" = todo el pais, ver
+    core.constants.ZONAS). Bumeran ignora este parametro (no soporta
+    scope de ciudad en esta implementacion, absorbe el kwarg via
+    **_kwargs sin romper).
 
     Devuelve (df, diagnostico): df ya deduplicado y clasificado, mismo
     esquema de columnas que el modo DEMO -- SIN recortar a max_resultados
-    aca (ver nota abajo). diagnostico es un dict con 'cant_crudo' y
-    'cant_tras_dedupe', para que la UI pueda mostrar cuanto se filtro en
-    cada etapa.
+    aca (ver nota abajo). diagnostico trae 'cant_crudo', 'cant_tras_dedupe',
+    'conteo_por_fuente' (ofertas unicas por fuente, post-dedupe) y
+    'avisos_fuentes' (mensajes de fuentes que fallaron, ej. Bumeran sin
+    Playwright) -- para que la UI pueda mostrar cuanto aporto cada etapa
+    y avisar sin romper si una fuente no respondio.
 
     A proposito NO se trunca a max_resultados en esta funcion: eso dejaba
     la busqueda en 0 visibles si los primeros N (crudos o duplicados, que
@@ -111,24 +118,47 @@ def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None):
     categoria/seniority/palabras."""
     fuentes = fuentes or list(FUENTES_DISPONIBLES.keys())
     terminos = [t.strip() for t in (terminos or []) if t.strip()]
-    diagnostico = {"cant_crudo": 0, "cant_tras_dedupe": 0}
+    diagnostico = {
+        "cant_crudo": 0, "cant_tras_dedupe": 0,
+        "conteo_por_fuente": {}, "avisos_fuentes": [],
+    }
     if not terminos:
         return _dataframe_vacio(), diagnostico
 
     max_resultados_crudos = max(max_resultados * 3, 50)
 
     crudas = []
-    for nombre_fuente in fuentes:
-        buscar_fn = FUENTES_DISPONIBLES.get(nombre_fuente)
-        if not buscar_fn:
-            continue
-        for termino in terminos:
-            try:
-                crudas.extend(buscar_fn(termino, dias=dias, max_resultados=max_resultados_crudos))
-            except NotImplementedError as e:
-                print(f"[real_search] {nombre_fuente}: {e}")
-            except Exception as e:
-                print(f"[real_search] {nombre_fuente} ('{termino}'): error inesperado: {e}")
+    fuentes_fallidas = set()
+    try:
+        for nombre_fuente in fuentes:
+            buscar_fn = FUENTES_DISPONIBLES.get(nombre_fuente)
+            if not buscar_fn:
+                continue
+            for termino in terminos:
+                if nombre_fuente in fuentes_fallidas:
+                    # Ya fallo con este termino (ej. Playwright ausente):
+                    # no tiene sentido reintentar termino por termino, se
+                    # salta el resto de esta fuente directamente.
+                    break
+                try:
+                    crudas.extend(buscar_fn(
+                        termino, dias=dias, max_resultados=max_resultados_crudos, ciudad=ciudad
+                    ))
+                except bumeran.BumeranNoDisponible as e:
+                    fuentes_fallidas.add(nombre_fuente)
+                    if str(e) not in diagnostico["avisos_fuentes"]:
+                        diagnostico["avisos_fuentes"].append(str(e))
+                    print(f"[real_search] {nombre_fuente}: {e}")
+                except NotImplementedError as e:
+                    fuentes_fallidas.add(nombre_fuente)
+                    print(f"[real_search] {nombre_fuente}: {e}")
+                except Exception as e:
+                    print(f"[real_search] {nombre_fuente} ('{termino}'): error inesperado: {e}")
+    finally:
+        # Bumeran deja un navegador Playwright abierto (se reusa entre
+        # terminos por velocidad) -- se cierra siempre al terminar la
+        # corrida, haya ido bien o mal. No hace nada si nunca se abrio.
+        bumeran.cerrar_navegador()
 
     diagnostico["cant_crudo"] = len(crudas)
     if not crudas:
@@ -137,6 +167,7 @@ def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None):
     df = pd.DataFrame(crudas)
     df, _ = _deduplicar(df)
     diagnostico["cant_tras_dedupe"] = len(df)
+    diagnostico["conteo_por_fuente"] = df["fuente"].value_counts().to_dict()
 
     relevancias, categorias, decisiones, motivos, acciones = [], [], [], [], []
     for _, fila in df.iterrows():
