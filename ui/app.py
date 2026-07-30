@@ -118,13 +118,17 @@ with st.container(border=True):
     )
 
 def _al_cambiar_modo():
-    """Dias por defecto distinto segun modo -- con 2 dias, Búsqueda real
-    devuelve 0 resultados seguido (Computrabajo matchea bastante literal
-    y tiene poco volumen a tan corto plazo). Se resetea al valor
-    sugerido de cada modo al tocar el selector; si el usuario ya habia
-    ajustado el slider a mano y vuelve a tocar el selector, se pisa --
-    tradeoff simple a proposito, evita guardar estado extra."""
-    st.session_state["dias_publicacion"] = 15 if st.session_state.get("modo_busqueda") == "Búsqueda real" else 2
+    """Dias y maximo de resultados por defecto distintos segun modo --
+    con pocos dias/pocos resultados, Búsqueda real devuelve 0 seguido
+    (Computrabajo matchea bastante literal y tiene poco volumen a corto
+    plazo; ademas los primeros resultados crudos no siempre son los que
+    pasan los filtros). Se resetea al valor sugerido de cada modo al
+    tocar el selector; si el usuario ya habia ajustado el slider a mano y
+    vuelve a tocar el selector, se pisa -- tradeoff simple a proposito,
+    evita guardar estado extra."""
+    es_real = st.session_state.get("modo_busqueda") == "Búsqueda real"
+    st.session_state["dias_publicacion"] = 30 if es_real else 2
+    st.session_state["max_resultados"] = 50 if es_real else 10
 
 
 modo = st.radio(
@@ -272,7 +276,7 @@ else:
 st.sidebar.header("Filtros")
 zona = st.sidebar.selectbox("Zona", OPCIONES_ZONA, key="filtro_zona")
 modalidad = st.sidebar.selectbox("Modalidad", ["Cualquiera", "Remoto", "Híbrido", "Presencial"])
-dias_publicacion = st.sidebar.slider("Días máximos de publicación", 1, 15, 2, key="dias_publicacion")
+dias_publicacion = st.sidebar.slider("Días máximos de publicación", 1, 30, 2, key="dias_publicacion")
 categorias = st.sidebar.multiselect(
     "Categorías", core.categorias_disponibles(), placeholder="Elegir opciones", key="filtro_categorias",
 )
@@ -285,7 +289,8 @@ palabras_obligatorias = st.sidebar.text_input(
 palabras_excluidas = st.sidebar.text_input(
     "Palabras excluidas (separadas por coma)", key="filtro_palabras_excluidas",
 )
-max_resultados = st.sidebar.slider("Máximo de resultados", 1, 10, 10)
+tope_max_resultados = 50 if modo == "Búsqueda real" else 10
+max_resultados = st.sidebar.slider("Máximo de resultados", 1, tope_max_resultados, 10, key="max_resultados")
 
 if modo == "Demo seguro":
     st.sidebar.caption(
@@ -340,6 +345,7 @@ if buscar:
             datos_resumen["palabras_obligatorias_usadas"] = [
                 p.strip() for p in palabras_obligatorias.split(",") if p.strip()
             ]
+            datos_resumen["filtros_categoria_seniority_activos"] = bool(categorias or seniority)
             st.session_state["resultados_demo"] = (nuevas, acciones_df, datos_resumen)
 
 # --- resultados --------------------------------------------------------
@@ -361,6 +367,11 @@ if "resultados_demo" in st.session_state:
 
     if datos_resumen.get("modo") == "real":
         st.caption("Fuente real consultada: Computrabajo. Bumeran e Indeed todavía no están conectados.")
+        st.caption(
+            f"Ofertas encontradas: {datos_resumen.get('cant_crudo', 0)} crudas → "
+            f"{datos_resumen.get('cant_tras_dedupe', 0)} únicas (sin duplicados) → "
+            f"{datos_resumen.get('cant_tras_filtros', 0)} tras aplicar filtros."
+        )
         terminos_usados = datos_resumen.get("terminos_usados") or []
         if terminos_usados:
             etiquetas_origen = {"cv": "sugeridas desde el CV", "campo": "editadas por el usuario"}
@@ -382,6 +393,12 @@ if "resultados_demo" in st.session_state:
                     "No se encontraron ofertas. El filtro de palabras obligatorias "
                     "puede estar limitando demasiado la búsqueda. Probá borrar: "
                     f"{', '.join(obligatorias_activas)}"
+                )
+            elif datos_resumen.get("filtros_categoria_seniority_activos"):
+                st.warning(
+                    "No se encontraron ofertas después de aplicar filtros. Probá "
+                    "ampliar días, aumentar máximo de resultados o relajar "
+                    "seniority/categorías."
                 )
             else:
                 st.warning(

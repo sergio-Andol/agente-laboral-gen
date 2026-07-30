@@ -8,6 +8,7 @@ y genericas, sin ajuste fino de ningun perfil personal. Nada de este
 modulo toca red, historial ni postula nada.
 """
 import datetime
+import re
 
 import pandas as pd
 
@@ -112,13 +113,15 @@ def ejecutar_busqueda_real(config):
     dias = config.get("dias", 2)
     max_resultados_busqueda = config.get("max_resultados", 10)
 
-    # Orden del pipeline, a proposito: buscar -> normalizar -> CLASIFICAR
-    # (categoria_detectada/decision_sugerida/motivo_decision/accion_sugerida,
-    # dentro de real_search.buscar_ofertas_reales) -> reciendespues filtrar.
+    # Orden del pipeline, a proposito: buscar crudos ampliados ->
+    # normalizar -> DEDUPLICAR -> CLASIFICAR (categoria_detectada/
+    # decision_sugerida/motivo_decision/accion_sugerida, todo dentro de
+    # real_search.buscar_ofertas_reales) -> recien despues filtrar.
     # _aplicar_filtros() nunca debe correr sobre datos sin clasificar.
-    nuevas = real_search.buscar_ofertas_reales(
+    nuevas, diagnostico_busqueda = real_search.buscar_ofertas_reales(
         terminos, dias=dias, max_resultados=max_resultados_busqueda
     )
+    cant_tras_dedupe = len(nuevas)
     nuevas = _aplicar_filtros(nuevas, config)
 
     acciones_df, conteo_acciones = classifier.construir_acciones(nuevas)
@@ -128,6 +131,9 @@ def ejecutar_busqueda_real(config):
         "fecha_hora": inicio.strftime("%Y-%m-%d %H:%M:%S"),
         "modo": "real",
         "cant_resultados": len(nuevas),
+        "cant_crudo": diagnostico_busqueda.get("cant_crudo", 0),
+        "cant_tras_dedupe": cant_tras_dedupe,
+        "cant_tras_filtros": len(nuevas),
         "postular": conteo_decision.get("POSTULAR", 0),
         "revisar": conteo_decision.get("REVISAR", 0),
         "descartar": conteo_decision.get("DESCARTAR", 0),
@@ -177,12 +183,21 @@ def _aplicar_filtros(nuevas, filtros):
     if categorias and _tiene_columna("categoria_detectada"):
         df = df[df["categoria_detectada"].isin(categorias)]
 
-    # OR, no AND: alcanza con que el titulo tenga alguna de las
-    # seniorities elegidas.
-    seniority = [s.strip().lower() for s in filtros.get("seniority", []) if s.strip()]
+    # Filtro de seniority: NO exige que el titulo diga literalmente
+    # "junior"/"trainee" -- muchas ofertas aptas no lo dicen. En cambio,
+    # cuando el filtro esta activo, deja pasar todo (incluidas ofertas
+    # sin seniority explicita) y solo DESCARTA titulos con seniority alta
+    # o de liderazgo clara. Si el usuario incluyo "Semi Senior" entre los
+    # niveles elegidos, esos terminos dejan de vetarse (es lo que pidio).
+    seniority = [s.strip() for s in filtros.get("seniority", []) if s.strip()]
     if seniority and _tiene_columna("titulo"):
+        veto = ["senior", "sr", "ssr", "semi senior", "semi-senior",
+                "líder", "lider", "jefe", "gerente", "responsable"]
+        if "Semi Senior" in seniority:
+            veto = [v for v in veto if v not in ("ssr", "semi senior", "semi-senior")]
+        patron_veto = re.compile(r"\b(?:" + "|".join(re.escape(v) for v in veto) + r")\b")
         texto = df["titulo"].fillna("").str.lower()
-        df = df[texto.apply(lambda t: any(s in t for s in seniority))]
+        df = df[~texto.apply(lambda t: bool(patron_veto.search(t)))]
 
     max_resultados = filtros.get("max_resultados")
     if max_resultados:
