@@ -1,0 +1,11 @@
+# Config de Streamlit para Agente Laboral Gen. Sin datos sensibles -- no
+# confundir con .streamlit/secrets.toml (que NUNCA se versiona, ver
+# .gitignore).
+#
+# gatherUsageStats = false evita el prompt interactivo de "bienvenida"
+# que Streamlit muestra la PRIMERA vez que se corre en una maquina
+# (pide un email por consola) -- sin esto, iniciar_agente_laboral_gen.bat
+# podria quedar colgado esperando una respuesta que nunca llega cuando
+# lo corre alguien sin experiencia de terminal.
+[browser]
+gatherUsageStats = false

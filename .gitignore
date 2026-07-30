@@ -3,6 +3,13 @@ __pycache__/
 .env
 resultados/
 
+# entorno virtual local creado por instalar_dependencias.bat -- nunca al repo
+.venv/
+
+# config de Streamlit: .streamlit/config.toml SI se versiona (no tiene
+# datos sensibles, solo apaga el prompt de bienvenida). secrets.toml NUNCA.
+.streamlit/secrets.toml
+
 # CVs subidos / preferencias locales -- no van al repo
 preferencias_ui.json
 perfil_ui.json

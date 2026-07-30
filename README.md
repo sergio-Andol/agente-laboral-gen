@@ -8,6 +8,32 @@ Dos modos, elegibles en pantalla:
 - **Demo seguro**: 6 ofertas de ejemplo fijas, sin red, para probar la app.
 - **Búsqueda real**: consulta Computrabajo en vivo (siempre) y Bumeran (opcional, si tenés Playwright instalado).
 
+## Uso para usuarios no técnicos
+
+No hace falta saber usar la terminal ni PowerShell. Un solo paso:
+
+**Hacé doble click en `Abrir_Agente_Laboral_Gen.bat`.**
+
+Ese archivo hace todo: crea el entorno local, instala lo necesario,
+levanta la app y abre el navegador. La primera vez puede tardar un
+par de minutos porque crea el entorno e instala las dependencias — las
+veces siguientes es mucho más rápido, porque reusa lo que ya instaló.
+
+En el medio te va a preguntar si querés instalar soporte opcional para
+Bumeran (además de Computrabajo). Es opcional y puede pedir la
+instalación de Chromium (~300MB, tarda unos minutos) — si respondés que
+no, la app funciona igual solo con Computrabajo, y podés instalarlo más
+adelante volviendo a abrir el mismo archivo.
+
+La app se abre sola en tu navegador en `http://localhost:8501`, como
+cualquier página web. Para cerrarla, cerrá esa ventana negra (o presioná
+Ctrl+C adentro).
+
+Tu CV se lee **en memoria** y **no se guarda en ningún lado** — se
+pierde al cerrar o recargar la página. La app **no postula
+automáticamente** en ningún momento: solo busca, clasifica y muestra —
+postular lo hacés vos, a mano, en el sitio real, si querés.
+
 ## Qué hace
 
 - **Sube tu CV** (PDF, DOCX o TXT) y lo analiza en el momento: detecta
