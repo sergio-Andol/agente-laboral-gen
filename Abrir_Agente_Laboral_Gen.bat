@@ -6,6 +6,9 @@ echo ============================================
 echo  Agente Laboral Gen
 echo ============================================
 echo.
+echo (Respaldo tecnico: si "Abrir_Agente_Laboral_Gen.pyw" te funciona,
+echo  usa ese en su lugar -- no abre esta consola.)
+echo.
 
 rem --- 1. Detectar Python (py -3 primero, python como fallback) --------
 where py >nul 2>nul

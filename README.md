@@ -12,27 +12,41 @@ Dos modos, elegibles en pantalla:
 
 No hace falta saber usar la terminal ni PowerShell. Un solo paso:
 
-**Hacé doble click en `Abrir_Agente_Laboral_Gen.bat`.**
+**Hacé doble click en `Abrir_Agente_Laboral_Gen.vbs`.**
 
-Ese archivo hace todo: crea el entorno local, instala lo necesario,
-levanta la app y abre el navegador. La primera vez puede tardar un
-par de minutos porque crea el entorno e instala las dependencias — las
-veces siguientes es mucho más rápido, porque reusa lo que ya instaló.
+Ese archivo no muestra ninguna consola: busca un Python instalado y con
+él abre `Abrir_Agente_Laboral_Gen.pyw`, que es el lanzador gráfico real
+(una ventanita con texto de estado, sin consola, sin PowerShell, sin
+CMD). El lanzador gráfico crea el entorno local, instala lo necesario,
+levanta la app y abre el navegador. La primera vez puede tardar un par
+de minutos porque crea el entorno virtual (`.venv`) e instala las
+dependencias — las veces siguientes es mucho más rápido, porque reusa
+lo que ya instaló.
 
-En el medio te va a preguntar si querés instalar soporte opcional para
-Bumeran (además de Computrabajo). Es opcional y puede pedir la
-instalación de Chromium (~300MB, tarda unos minutos) — si respondés que
-no, la app funciona igual solo con Computrabajo, y podés instalarlo más
-adelante volviendo a abrir el mismo archivo.
+En el medio te va a preguntar, con una ventana normal (botones Sí/No),
+si querés instalar soporte opcional para Bumeran (además de
+Computrabajo). Es opcional y puede pedir la instalación de Chromium
+(~300MB, tarda unos minutos) — si respondés que no, la app funciona
+igual solo con Computrabajo, y podés instalarlo más adelante volviendo a
+abrir el mismo archivo.
 
 La app se abre sola en tu navegador en `http://localhost:8501`, como
-cualquier página web. Para cerrarla, cerrá esa ventana negra (o presioná
-Ctrl+C adentro).
+cualquier página web. Para cerrarla, cerrá la ventanita del lanzador.
+
+### Alternativas (respaldo técnico)
+
+- `Abrir_Agente_Laboral_Gen.pyw`: el lanzador gráfico en sí. Podés
+  abrirlo directo si tu Windows ya tiene `.pyw` asociado a Python — el
+  `.vbs` existe justamente para no depender de esa asociación.
+- `Abrir_Agente_Laboral_Gen.bat`: respaldo técnico si ninguno de los
+  anteriores funciona. Hace lo mismo pero muestra una consola negra
+  durante todo el proceso.
 
 Tu CV se lee **en memoria** y **no se guarda en ningún lado** — se
 pierde al cerrar o recargar la página. La app **no postula
 automáticamente** en ningún momento: solo busca, clasifica y muestra —
-postular lo hacés vos, a mano, en el sitio real, si querés.
+postular lo hacés vos, a mano, en el sitio real, si querés. Tampoco
+guarda historial de búsquedas entre corridas.
 
 ## Qué hace
 
