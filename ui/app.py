@@ -392,20 +392,37 @@ if "resultados_demo" in st.session_state:
     if datos_resumen.get("modo") == "real":
         st.caption(f"Alcance geográfico: {datos_resumen.get('alcance_geografico', 'Toda Argentina')}")
         conteo_por_fuente = datos_resumen.get("conteo_por_fuente") or {}
+        conteo_por_fuente_final = datos_resumen.get("conteo_por_fuente_final") or {}
         if conteo_por_fuente:
             desglose = ", ".join(f"{fuente}: {cant}" for fuente, cant in conteo_por_fuente.items())
             st.caption(f"Fuentes reales consultadas — {desglose}. Indeed todavía no está conectado.")
         else:
             st.caption("Ninguna fuente devolvió resultados. Computrabajo activo por defecto, Bumeran opcional (si lo tildaste). Indeed no conectado todavía.")
+        if conteo_por_fuente:
+            desglose_final = ", ".join(
+                f"{fuente}: {conteo_por_fuente_final.get(fuente, 0)}" for fuente in conteo_por_fuente
+            )
+            st.caption(f"En el resultado final (tras filtros) — {desglose_final}.")
+
+        # avisos_fuentes agrupa 3 situaciones bien distintas de Bumeran
+        # (no confundir "0 resultados reales" con "el sitio bloqueó/
+        # cambió de estructura" -- cada aviso ya trae su propio texto
+        # diferenciado, ver core/sources/bumeran.py):
+        #   a) Playwright/Chromium no disponible (BumeranNoDisponible)
+        #   b) respondió pero no se pudo leer / estructura distinta
+        #   c) bloqueo (captcha/verificación) detectado
         avisos_fuentes = datos_resumen.get("avisos_fuentes") or []
         if avisos_fuentes:
-            st.warning(
-                "Bumeran no respondió o Playwright no está disponible. "
-                "Se muestran resultados de las demás fuentes."
+            st.warning("Bumeran tuvo un problema en esta búsqueda. Se muestran resultados de las demás fuentes.")
+            for aviso in avisos_fuentes:
+                st.caption(f"⚠️ {aviso}")
+        elif "Bumeran" in fuentes_activas and conteo_por_fuente.get("Bumeran", 0) == 0:
+            st.info("Bumeran no devolvió resultados con estos filtros.")
+        elif "Bumeran" in fuentes_activas and conteo_por_fuente.get("Bumeran", 0) > 0 and conteo_por_fuente_final.get("Bumeran", 0) == 0:
+            st.info(
+                f"Bumeran crudas: {conteo_por_fuente['Bumeran']}, tras filtros: 0 — "
+                "los filtros de la sidebar (categoría, seniority, palabras, zona) descartaron todas sus ofertas."
             )
-            with st.expander("Detalle del aviso"):
-                for aviso in avisos_fuentes:
-                    st.caption(aviso)
         st.caption(
             f"Ofertas encontradas: {datos_resumen.get('cant_crudo', 0)} crudas → "
             f"{datos_resumen.get('cant_tras_dedupe', 0)} únicas (sin duplicados) → "

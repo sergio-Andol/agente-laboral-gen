@@ -144,6 +144,10 @@ def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None, ciu
                     crudas.extend(buscar_fn(
                         termino, dias=dias, max_resultados=max_resultados_crudos, ciudad=ciudad
                     ))
+                    if nombre_fuente == "Bumeran":
+                        for aviso in bumeran.tomar_avisos():
+                            if aviso not in diagnostico["avisos_fuentes"]:
+                                diagnostico["avisos_fuentes"].append(aviso)
                 except bumeran.BumeranNoDisponible as e:
                     fuentes_fallidas.add(nombre_fuente)
                     if str(e) not in diagnostico["avisos_fuentes"]:
@@ -164,31 +168,53 @@ def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None, ciu
     if not crudas:
         return _dataframe_vacio(), diagnostico
 
-    df = pd.DataFrame(crudas)
-    df, _ = _deduplicar(df)
-    diagnostico["cant_tras_dedupe"] = len(df)
-    diagnostico["conteo_por_fuente"] = df["fuente"].value_counts().to_dict()
+    # Todo este bloque (dedupe + clasificacion + normalizacion final) va
+    # envuelto: si algo inesperado revienta aca (parsing raro de alguna
+    # fuente, columna faltante, etc.), la busqueda entera no debe romper
+    # -- se devuelve el DataFrame vacio con el esquema correcto y se dej
+    # a constancia en 'avisos_fuentes', en vez de propagar la excepcion
+    # hasta la UI.
+    try:
+        df = pd.DataFrame(crudas)
+        df, _ = _deduplicar(df)
+        diagnostico["cant_tras_dedupe"] = len(df)
+        diagnostico["conteo_por_fuente"] = df["fuente"].value_counts().to_dict()
 
-    relevancias, categorias, decisiones, motivos, acciones = [], [], [], [], []
-    for _, fila in df.iterrows():
-        texto_titulo_desc = f"{fila['titulo']} {fila.get('descripcion', '')}"
-        categoria, cantidad = classifier.detectar_categoria(texto_titulo_desc)
-        decision, motivo = classifier.clasificar_decision(fila["titulo"], fila.get("descripcion", ""))
-        relevancias.append(cantidad)
-        categorias.append(categoria)
-        decisiones.append(decision)
-        motivos.append(motivo)
-        acciones.append(classifier.determinar_accion_sugerida(decision))
+        relevancias, categorias, decisiones, motivos, acciones = [], [], [], [], []
+        for _, fila in df.iterrows():
+            texto_titulo_desc = f"{fila['titulo']} {fila.get('descripcion', '')}"
+            categoria, cantidad = classifier.detectar_categoria(texto_titulo_desc)
+            decision, motivo = classifier.clasificar_decision(fila["titulo"], fila.get("descripcion", ""))
+            relevancias.append(cantidad)
+            categorias.append(categoria)
+            decisiones.append(decision)
+            motivos.append(motivo)
+            acciones.append(classifier.determinar_accion_sugerida(decision))
 
-    df["relevancia"] = relevancias
-    df["categoria_detectada"] = categorias
-    df["decision_sugerida"] = decisiones
-    df["motivo_decision"] = motivos
-    df["accion_sugerida"] = acciones
+        df["relevancia"] = relevancias
+        df["categoria_detectada"] = categorias
+        df["decision_sugerida"] = decisiones
+        df["motivo_decision"] = motivos
+        df["accion_sugerida"] = acciones
 
-    df["_orden_decision"] = df["decision_sugerida"].map(constants.ORDEN_DECISION)
-    df = df.sort_values(
-        by=["_orden_decision", "relevancia"], ascending=[True, False]
-    ).drop(columns=["_orden_decision"])
+        df["_orden_decision"] = df["decision_sugerida"].map(constants.ORDEN_DECISION)
+        df = df.sort_values(
+            by=["_orden_decision", "relevancia"], ascending=[True, False]
+        ).drop(columns=["_orden_decision"])
 
-    return df[COLUMNAS_RESULTADO].reset_index(drop=True), diagnostico
+        # Red de seguridad final: aunque todo lo de arriba haya ido bien,
+        # garantiza que las columnas esperadas existan antes de indexar
+        # con ellas -- una columna faltante rellena con "" en vez de
+        # lanzar KeyError.
+        for columna in COLUMNAS_RESULTADO:
+            if columna not in df.columns:
+                df[columna] = ""
+
+        return df[COLUMNAS_RESULTADO].reset_index(drop=True), diagnostico
+    except Exception as e:
+        print(f"[real_search] error normalizando/clasificando resultados: {e}")
+        diagnostico["avisos_fuentes"].append(
+            "Ocurrió un error inesperado clasificando los resultados de esta búsqueda; "
+            "se muestran 0 ofertas."
+        )
+        return _dataframe_vacio(), diagnostico

@@ -137,10 +137,17 @@ def ejecutar_busqueda_real(config):
         fuentes=fuentes, ciudad=ciudad,
     )
     cant_tras_dedupe = len(nuevas)
+    conteo_por_fuente_crudo = diagnostico_busqueda.get("conteo_por_fuente", {})
     nuevas = _aplicar_filtros(nuevas, config)
 
     acciones_df, conteo_acciones = classifier.construir_acciones(nuevas)
-    conteo_decision = nuevas["decision_sugerida"].value_counts().to_dict()
+    conteo_decision = (
+        nuevas["decision_sugerida"].value_counts().to_dict()
+        if "decision_sugerida" in nuevas.columns else {}
+    )
+    conteo_por_fuente_final = (
+        nuevas["fuente"].value_counts().to_dict() if "fuente" in nuevas.columns else {}
+    )
 
     datos_resumen = {
         "fecha_hora": inicio.strftime("%Y-%m-%d %H:%M:%S"),
@@ -149,7 +156,14 @@ def ejecutar_busqueda_real(config):
         "cant_crudo": diagnostico_busqueda.get("cant_crudo", 0),
         "cant_tras_dedupe": cant_tras_dedupe,
         "cant_tras_filtros": len(nuevas),
-        "conteo_por_fuente": diagnostico_busqueda.get("conteo_por_fuente", {}),
+        # 'conteo_por_fuente': cuantas trajo cada fuente tras deduplicar,
+        # ANTES de filtros de contenido y del recorte a max_resultados.
+        # 'conteo_por_fuente_final': cuantas de cada fuente quedan en el
+        # resultado final (lo que se ve en pantalla y se exporta a
+        # Excel) -- si una fuente tenia crudas pero termino en 0 aca, se
+        # muestra en la UI en vez de ocultarse en silencio.
+        "conteo_por_fuente": conteo_por_fuente_crudo,
+        "conteo_por_fuente_final": conteo_por_fuente_final,
         "avisos_fuentes": diagnostico_busqueda.get("avisos_fuentes", []),
         "alcance_geografico": zona,
         "postular": conteo_decision.get("POSTULAR", 0),
@@ -226,10 +240,56 @@ def _aplicar_filtros(nuevas, filtros):
         df = df[~texto.apply(lambda t: bool(patron_veto.search(t)))]
 
     max_resultados = filtros.get("max_resultados")
-    if max_resultados:
+    if max_resultados and _tiene_columna("fuente"):
+        df = _recortar_balanceado_por_fuente(df, int(max_resultados))
+    elif max_resultados:
         df = df.head(int(max_resultados))
 
     return df
+
+
+def _recortar_balanceado_por_fuente(df, tope):
+    """Recorta a 'tope' filas repartiendo en ronda-robin entre las
+    fuentes presentes en 'df', en vez de cortar la lista global de
+    punta a punta con head().
+
+    Por que: 'df' ya viene ordenado globalmente por decision/relevancia
+    (mejores ofertas primero), pero Computrabajo pagina y Bumeran no --
+    Computrabajo aporta muchas mas filas crudas. Un head(tope) sobre la
+    lista global le da todo el cupo a la fuente con mas volumen y deja
+    a la otra en 0, aunque haya aportado ofertas validas (bug real
+    detectado: Computrabajo 50 crudas + Bumeran 20 -> las primeras 10
+    finales eran todas Computrabajo). La ronda-robin garantiza que cada
+    fuente activa se quede con una porcion, preservando el orden interno
+    (mejor primero) de cada una. Con una sola fuente presente (modo DEMO,
+    o busqueda real con 1 sola fuente activa) el resultado es identico a
+    head(tope) -- no hay regresion en esos casos."""
+    if df.empty or len(df) <= tope:
+        return df
+
+    orden_fuentes = list(dict.fromkeys(df["fuente"]))
+    grupos = {f: list(indices) for f, indices in df.groupby("fuente", sort=False).groups.items()}
+    punteros = {f: 0 for f in orden_fuentes}
+
+    elegidos = []
+    while len(elegidos) < tope:
+        avanzo = False
+        for f in orden_fuentes:
+            lista = grupos[f]
+            p = punteros[f]
+            if p < len(lista):
+                elegidos.append(lista[p])
+                punteros[f] = p + 1
+                avanzo = True
+                if len(elegidos) >= tope:
+                    break
+        if not avanzo:
+            break
+
+    # sorted() restaura el orden original (decision/relevancia) sobre el
+    # subconjunto elegido -- la ronda-robin decide QUE filas entran, no
+    # el orden en que se muestran.
+    return df.loc[sorted(elegidos)].reset_index(drop=True)
 
 
 def exportar_excel(nuevas, acciones_df, datos_resumen):

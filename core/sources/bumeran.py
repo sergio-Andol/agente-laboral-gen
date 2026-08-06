@@ -34,7 +34,52 @@ from core.sources.models import oferta_vacia
 PAUSA_ENTRE_CARGAS = 1.5  # segundos, tras cargar cada pagina de listado
 BASE_URL = "https://www.bumeran.com.ar"
 
+# Bumeran NO acepta cualquier antiguedad en la URL "empleos-publicacion-
+# menor-a-N-dias.html" -- son buckets fijos que arma el propio sitio.
+# Confirmado en vivo (2026): N en (2,3,4,5,6,7,15) devuelve avisos reales;
+# cualquier otro valor (1, 8-14, 16+, incluido 30 -- el tope del slider de
+# dias de la UI) responde 200 OK pero con 0 avisos, como si no hubiera
+# resultados, aunque los haya. Sin este ajuste, elegir "30 dias" en la UI
+# (un valor perfectamente valido para Computrabajo) garantiza 0 crudas de
+# Bumeran pase lo que pase con la query.
+_DIAS_SOPORTADOS = (2, 3, 4, 5, 6, 7, 15)
+
+
+def _dias_soportado(dias):
+    """Ajusta 'dias' al bucket soportado mas cercano POR ARRIBA (mas
+    amplio, nunca mas angosto que lo pedido) -- si se pide mas de 15 (el
+    maximo soportado), se usa 15 en vez de devolver 0 resultados por un
+    valor que Bumeran no reconoce."""
+    if dias in _DIAS_SOPORTADOS:
+        return dias
+    for candidato in _DIAS_SOPORTADOS:
+        if candidato >= dias:
+            return candidato
+    return _DIAS_SOPORTADOS[-1]
+
+
 _PW = {"play": None, "browser": None, "page": None}
+
+# Avisos de diagnostico (bloqueo, estructura distinta, parseo fallido)
+# acumulados durante buscar() -- core.real_search los lee con
+# tomar_avisos() despues de cada llamada y los muestra en la UI, para no
+# confundir "0 avisos reales" con "Bumeran esta bloqueando o cambio de
+# estructura" (ver regla 8 del pedido que agrego esto).
+_AVISOS_PENDIENTES = []
+
+
+def tomar_avisos():
+    """Devuelve y vacia los avisos acumulados desde la ultima llamada."""
+    avisos = list(_AVISOS_PENDIENTES)
+    _AVISOS_PENDIENTES.clear()
+    return avisos
+
+
+# Frases que SI esperamos ver en una pagina de listado real de Bumeran
+# (haya o no resultados) -- si ninguna aparece, la pagina no tiene la
+# forma esperada: cambio de estructura del sitio, o un bloqueo silencioso
+# (sin las palabras de _BLOQUEO_KW) que devuelve una pagina distinta.
+_MARCADORES_LISTADO = ("ofertas de empleo", "no encontramos")
 
 _MENSAJE_INSTALAR = (
     "Bumeran requiere Playwright. Instalalo con: "
@@ -238,38 +283,70 @@ def buscar(query, dias=2, max_paginas=1, max_resultados=20, **_kwargs):
 
     'max_paginas' se acepta por simetria con la firma de Computrabajo,
     pero Bumeran no pagina en esta implementacion (una sola carga de
-    listado, con el fallback zona+fecha como segundo intento) -- queda
-    documentado como limitacion conocida, no usado hoy."""
+    listado, con el fallback global por fecha como segundo intento) --
+    queda documentado como limitacion conocida, no usado hoy."""
     page = _get_page()  # puede lanzar BumeranNoDisponible, sin atrapar aca
 
     filas = []
     try:
         from urllib.parse import quote
         slug = quote(query.strip().lower().replace(" ", "-"))
+        dias_valido = _dias_soportado(dias) if dias else dias
+        if dias_valido and dias_valido != dias:
+            print(f"[Bumeran] días={dias} no es un bucket soportado por el sitio -- se usa {dias_valido}")
 
-        if dias:
-            url = f"{BASE_URL}/empleos-publicacion-menor-a-{dias}-dias-busqueda-{slug}.html"
+        if dias_valido:
+            url = f"{BASE_URL}/empleos-publicacion-menor-a-{dias_valido}-dias-busqueda-{slug}.html"
         else:
             url = f"{BASE_URL}/empleos-busqueda-{slug}.html"
 
         tarjetas, cuerpo = _cargar_listado(page, url)
         if _detectar_bloqueo(cuerpo):
             print("[Bumeran] bloqueo detectado (captcha/cloudflare) -- se corta esta búsqueda")
+            _AVISOS_PENDIENTES.append(
+                "Bumeran parece bloquear la búsqueda (captcha/verificación detectada)."
+            )
             return filas
 
         filtrar_localmente = False
-        if not tarjetas and dias:
-            url_fallback = f"{BASE_URL}/en-buenos-aires/empleos-publicacion-menor-a-{dias}-dias.html"
+        if not tarjetas and dias_valido:
+            # A proposito SIN zona: "empleos-en-{zona}-publicacion-menor-
+            # a-N-dias.html" (en cualquier orden) devuelve 0 avisos en el
+            # sitio actual aunque responda 200 OK -- confirmado en vivo.
+            # El fallback global (sin zona) SI funciona; Bumeran no
+            # soporta scope de ciudad en esta implementacion de todas
+            # formas (ver docstring del modulo).
+            url_fallback = f"{BASE_URL}/empleos-publicacion-menor-a-{dias_valido}-dias.html"
             tarjetas, cuerpo = _cargar_listado(page, url_fallback)
             filtrar_localmente = True
             if _detectar_bloqueo(cuerpo):
                 print("[Bumeran] bloqueo detectado en fallback -- se corta esta búsqueda")
+                _AVISOS_PENDIENTES.append(
+                    "Bumeran parece bloquear la búsqueda (captcha/verificación detectada)."
+                )
                 return filas
 
         if not tarjetas:
+            # 0 tarjetas y sin palabras de bloqueo explicitas: puede ser
+            # (a) genuinamente 0 avisos en esa ventana de dias, o (b) el
+            # sitio devolvio una pagina con otra forma (bloqueo silencioso
+            # o cambio de estructura) que no tiene ninguno de los
+            # marcadores de una pagina de listado real. Se distingue para
+            # no confundir "0 resultados reales" con "no se pudo leer".
+            if cuerpo and not any(m in cuerpo.lower() for m in _MARCADORES_LISTADO):
+                _AVISOS_PENDIENTES.append(
+                    "Bumeran respondió con una página inesperada (posible bloqueo silencioso "
+                    "o cambio de estructura del sitio) -- no se pudo confirmar si hay resultados."
+                )
             return filas
 
         filas = _extraer_candidatos(tarjetas, query, filtrar_localmente, max_resultados)
+        if tarjetas and not filas:
+            _AVISOS_PENDIENTES.append(
+                "Bumeran respondió con avisos, pero no se pudieron leer los resultados "
+                "(posible cambio de estructura del sitio)."
+            )
     except Exception as e:
         print(f"[Bumeran] error inesperado: {e}")
+        _AVISOS_PENDIENTES.append(f"Bumeran: error inesperado buscando '{query}': {e}")
     return filas

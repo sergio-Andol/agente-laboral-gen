@@ -104,11 +104,20 @@ def determinar_accion_sugerida(decision):
 def construir_acciones(nuevas):
     """DataFrame de acciones (solo POSTULAR/REVISAR) + conteo por tipo,
     con las 4 etiquetas fijas para que la UI siempre tenga las 4 metricas
-    aunque alguna de 0."""
+    aunque alguna de 0.
+
+    Defensivo a proposito: si 'nuevas' no tiene la columna
+    'decision_sugerida' (ej. un DataFrame vacio de una fuente que fallo
+    antes de llegar a clasificar), no explota con KeyError -- devuelve un
+    DataFrame vacio (mismas columnas que 'nuevas' tenga) y el conteo en
+    0, en vez de romper toda la corrida de busqueda."""
     conteo_base = {
         "POSTULAR HOY": 0, "REVISAR ANTES DE POSTULAR": 0,
         "REVISAR MANUALMENTE": 0, "NO ACCIONAR": 0,
     }
+    if "decision_sugerida" not in nuevas.columns:
+        return nuevas.iloc[0:0].copy(), conteo_base
+
     acciones = nuevas[nuevas["decision_sugerida"].isin(["POSTULAR", "REVISAR"])].copy()
     if acciones.empty:
         return acciones, conteo_base
