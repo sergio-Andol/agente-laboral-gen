@@ -136,10 +136,23 @@ def _al_cambiar_modo():
     st.session_state["max_resultados"] = 50 if es_real else 10
 
 
-modo = st.radio(
-    "Modo", ["Demo seguro", "Búsqueda real"], horizontal=True,
-    key="modo_busqueda", on_change=_al_cambiar_modo,
-)
+# Modo Demo temporalmente deshabilitado: por ahora la app muestra solo
+# búsqueda real. El selector y toda la rama "Demo seguro" (mas abajo en
+# este archivo, y core.demo_data / core.generar_resultados_demo) quedan
+# intactos sin tocar -- para reactivar el modo demo, volver a poner esta
+# constante en True.
+MODO_DEMO_HABILITADO = False
+
+if MODO_DEMO_HABILITADO:
+    modo = st.radio(
+        "Modo", ["Demo seguro", "Búsqueda real"], horizontal=True,
+        key="modo_busqueda", on_change=_al_cambiar_modo,
+    )
+else:
+    modo = "Búsqueda real"
+    st.session_state.setdefault("modo_busqueda", modo)
+    st.session_state.setdefault("dias_publicacion", 30)
+    st.session_state.setdefault("max_resultados", 50)
 
 if modo == "Demo seguro":
     st.info("Modo demo: resultados simulados para probar la app.")
