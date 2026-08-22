@@ -1,0 +1,29 @@
+/* Overrides de paleta OSCURA -- se inyecta DESPUES de ui/theme.css (que
+   define la paleta clara, default) solo cuando el usuario elige "Oscuro"
+   en el selector propio del sidebar (ver ui/app.py). Redefine las mismas
+   variables --alg-*; el resto de las reglas de theme.css no cambia --
+   todas leen estas variables, asi que el tema se propaga solo.
+
+   Sobria a proposito, no negro puro: gris muy oscuro de fondo, gris
+   oscuro (mas claro que el fondo) para las cards, texto casi blanco. El
+   CTA/pill-seleccionada/paso-completado se invierten a fondo blanco +
+   texto casi negro (ver --alg-inverse-* en theme.css) para mantener
+   contraste alto sin usar negro puro sobre negro puro. */
+
+:root {
+  --alg-bg: #17181C;
+  --alg-surface: #212226;
+  --alg-sidebar-bg: #1B1C20;
+  --alg-text: #F2F2F3;
+  --alg-text-secondary: #9CA0A8;
+  --alg-border: #34363C;
+  --alg-inverse-bg: #FFFFFF;
+  --alg-inverse-bg-hover: #E4E4E4;
+  --alg-inverse-text: #15161A;
+  --alg-green-bg: #1E3323;
+  --alg-green-text: #86D998;
+  --alg-amber-bg: #3A2F14;
+  --alg-amber-text: #E8C468;
+  --alg-rose-bg: #3A1F22;
+  --alg-rose-text: #F0909B;
+}

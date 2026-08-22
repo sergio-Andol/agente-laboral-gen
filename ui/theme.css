@@ -1,0 +1,360 @@
+/* Tema visual de Agente Laboral Gen -- Fase 2B (solo presentacion). */
+/* Complementa el [theme] de .streamlit/config.toml: ese archivo recolorea */
+/* los widgets nativos de Streamlit (checkbox, radio, slider, tags de */
+/* multiselect, foco de inputs); esto cubre tipografia, botones, cards, */
+/* el stepper de pasos y los chips de resultado. Nada aca cambia */
+/* comportamiento, solo aspecto. Cargado por ui/app.py via st.markdown. */
+/* Paleta CLARA (default). ui/theme_dark.css redefine estas mismas */
+/* variables --alg-* cuando el usuario elige "Oscuro" en el selector */
+/* propio del sidebar -- se inyecta DESPUES de este archivo, asi que */
+/* sus valores ganan por orden de cascada sin tocar nada de aca. */
+
+:root {
+  --alg-bg: #FAFAFA;
+  --alg-surface: #FFFFFF;
+  --alg-sidebar-bg: #F6F6F7;
+  --alg-text: #1A1A1A;
+  --alg-text-secondary: #6B7280;
+  --alg-border: #E5E7EB;
+  /* "inverse" = tratamiento invertido de alto contraste: fondo negro +
+     texto blanco en claro, fondo blanco + texto casi negro en oscuro.
+     Usado por el CTA principal, la pill de filtro seleccionada y el
+     circulo de paso completado -- SIEMPRE como par (bg+text juntos),
+     nunca un blanco/negro suelto, para que invertir el tema no deje
+     texto invisible sobre su propio fondo. */
+  --alg-inverse-bg: #111111;
+  --alg-inverse-bg-hover: #2B2B2B;
+  --alg-inverse-text: #FFFFFF;
+  --alg-green-bg: #EAF6EC;
+  --alg-green-text: #2F7A3D;
+  --alg-amber-bg: #FDF4E3;
+  --alg-amber-text: #9A6B12;
+  --alg-rose-bg: #FBEAEA;
+  --alg-rose-text: #B03A3A;
+  --alg-radius: 12px;
+  --alg-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Base: tipografia y fondo. font-family se hereda desde .stApp (sin
+   !important ni selectores tipo [class*="st-"] -- eso pisaba la fuente
+   de iconos de Streamlit, que dejaban de mostrar el glifo y mostraban
+   el nombre textual del icono, ej. "arrow_right"). */
+
+html, body {
+  background: var(--alg-bg);
+}
+
+.stApp {
+  font-family: var(--alg-font);
+  background: var(--alg-bg);
+}
+
+.block-container {
+  padding-top: 2.5rem;
+  max-width: 880px;
+}
+
+[data-testid="stSidebar"] {
+  background: var(--alg-sidebar-bg);
+}
+
+h1 {
+  font-size: 2rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+  color: var(--alg-text) !important;
+}
+
+h2 {
+  font-size: 1.1rem !important;
+  font-weight: 600 !important;
+  color: var(--alg-text) !important;
+  margin-top: 0.5rem !important;
+}
+
+h3 {
+  font-size: 0.98rem !important;
+  font-weight: 600 !important;
+  color: var(--alg-text) !important;
+}
+
+/* Los headers de Streamlit (st.header/st.subheader) agregan un icono de
+   "link to heading" al hacer hover -- ruido tecnico que no aporta nada
+   en esta app. Se oculta. */
+.stMarkdown h1 a, .stMarkdown h2 a, .stMarkdown h3 a,
+[data-testid="stHeaderActionElements"] {
+  display: none !important;
+}
+
+p, .stCaption, [data-testid="stCaptionContainer"], small {
+  color: var(--alg-text-secondary) !important;
+}
+
+/* El <p> generico de arriba tambien matchea el <p> interno que
+   Streamlit usa para el LABEL de los botones (ej. "Buscar ofertas") --
+   sin este reset, el boton primario terminaba con fondo negro pero
+   texto gris (el !important del <p> le ganaba al color del boton).
+   inherit deja que el color lo defina el boton (mas abajo). */
+.stButton p, .stDownloadButton p {
+  color: inherit !important;
+}
+
+/* Botones */
+
+.stButton > button, .stDownloadButton > button {
+  border-radius: 10px;
+  padding: 0.55rem 1.4rem;
+  font-weight: 600;
+  border: 1px solid var(--alg-border);
+  background: var(--alg-surface);
+  color: var(--alg-text);
+  box-shadow: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.stButton > button:hover, .stDownloadButton > button:hover {
+  border-color: var(--alg-inverse-bg);
+  color: var(--alg-inverse-bg);
+}
+
+button[kind="primary"], .stDownloadButton > button[kind="primary"] {
+  background: var(--alg-inverse-bg) !important;
+  color: var(--alg-inverse-text) !important;
+  border: 1px solid var(--alg-inverse-bg) !important;
+}
+
+button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover {
+  background: var(--alg-inverse-bg-hover) !important;
+  border-color: var(--alg-inverse-bg-hover) !important;
+  color: var(--alg-inverse-text) !important;
+}
+
+/* Cards (st.container(border=True)) */
+
+div[data-testid="stVerticalBlockBorderWrapper"] {
+  border: 1px solid var(--alg-border) !important;
+  border-radius: var(--alg-radius) !important;
+  background: var(--alg-surface);
+  box-shadow: none !important;
+  padding: 0.25rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Inputs -- ademas de redondeo/borde, fondo y texto explicitos: los
+   widgets nativos resuelven su propio color por defecto segun [theme]
+   de config.toml (fijo en "light"), asi que en modo Oscuro necesitan
+   este empujon para no quedar claros en una pantalla oscura.
+   Streamlit (esta version) arma selectbox/multiselect con React Aria
+   Components, no BaseWeb -- de ahi [data-testid="stSelectbox"] en vez
+   de [data-baseweb="select"]. */
+
+.stTextInput input, .stTextArea textarea,
+[data-testid="stSelectbox"] input, [data-testid="stMultiSelect"] input {
+  border-radius: 8px !important;
+  border-color: var(--alg-border) !important;
+  background: var(--alg-surface) !important;
+  color: var(--alg-text) !important;
+}
+
+[data-testid="stFileUploaderDropzone"] {
+  background: var(--alg-bg) !important;
+  border-color: var(--alg-border) !important;
+}
+
+/* El multiselect envuelve sus tags en un div extra (sin testid propio,
+   solo clase auto-generada) con fondo claro fijo -- se llega por
+   estructura, igual que el listbox de mas abajo. */
+div:has(> [data-testid="stMultiSelectTagsContainer"]) {
+  background: var(--alg-surface) !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--alg-text-secondary) !important;
+  opacity: 1;
+}
+
+[data-testid="stSelectbox"] button svg,
+[data-testid="stMultiSelect"] button svg {
+  color: var(--alg-text-secondary) !important;
+  fill: var(--alg-text-secondary) !important;
+}
+
+/* El menu desplegable de selectbox/multiselect se renderiza en un
+   portal FUERA de .stApp (directo en <body>, position:fixed), con
+   clases auto-generadas que cambian entre builds de Streamlit -- no se
+   puede apuntar por clase, se llega por estructura (:has) y roles
+   ARIA, que si son estables. */
+div:has(> [role="listbox"]) {
+  background: var(--alg-surface) !important;
+}
+
+[role="listbox"] {
+  background: var(--alg-surface) !important;
+}
+
+[role="option"] {
+  color: var(--alg-text) !important;
+}
+
+[role="option"]:hover, [role="option"][aria-selected="true"] {
+  background: var(--alg-border) !important;
+}
+
+/* Stepper de pasos (Perfil, Preferencias, Buscar, Resultados) */
+
+.alg-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 1.25rem 0 1.75rem 0;
+  flex-wrap: wrap;
+}
+
+.alg-step {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--alg-text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.alg-step-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--alg-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--alg-text-secondary);
+  background: var(--alg-surface);
+  flex-shrink: 0;
+}
+
+.alg-step.done .alg-step-dot {
+  background: var(--alg-inverse-bg);
+  border-color: var(--alg-inverse-bg);
+  color: var(--alg-inverse-text);
+}
+
+.alg-step.activo {
+  color: var(--alg-text);
+}
+
+.alg-step.activo .alg-step-dot {
+  border-color: var(--alg-inverse-bg);
+  color: var(--alg-inverse-bg);
+  font-weight: 700;
+}
+
+.alg-step-line {
+  width: 22px;
+  height: 1px;
+  background: var(--alg-border);
+  flex-shrink: 0;
+}
+
+/* Titulos de seccion propios (reemplazan st.header dentro de las cards) */
+
+.alg-section-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--alg-text);
+  margin-bottom: 0.15rem;
+}
+
+/* Secciones sin card (Buscar, Resultados) necesitan su propio aire
+   arriba -- una card se los daba gratis via su margin-bottom. */
+.alg-section-title-spaced {
+  margin-top: 2.25rem;
+}
+
+.alg-section-sub {
+  font-size: 0.85rem;
+  color: var(--alg-text-secondary);
+  margin-bottom: 0.9rem;
+}
+
+/* Chips de resultado (POSTULAR / REVISAR / DESCARTAR) */
+
+.alg-metric-row {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0.75rem 0 1rem 0;
+  flex-wrap: wrap;
+}
+
+.alg-metric {
+  flex: 1 1 140px;
+  border-radius: var(--alg-radius);
+  padding: 0.9rem 1rem;
+  text-align: left;
+}
+
+.alg-metric-num {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.alg-metric-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  margin-top: 0.15rem;
+  opacity: 0.85;
+}
+
+.alg-metric-green { background: var(--alg-green-bg); }
+.alg-metric-green .alg-metric-num, .alg-metric-green .alg-metric-label { color: var(--alg-green-text); }
+
+.alg-metric-amber { background: var(--alg-amber-bg); }
+.alg-metric-amber .alg-metric-num, .alg-metric-amber .alg-metric-label { color: var(--alg-amber-text); }
+
+.alg-metric-rose { background: var(--alg-rose-bg); }
+.alg-metric-rose .alg-metric-num, .alg-metric-rose .alg-metric-label { color: var(--alg-rose-text); }
+
+/* Aviso discreto (reemplaza el st.info del banner de seguridad) */
+
+.alg-aviso-discreto {
+  font-size: 0.82rem;
+  color: var(--alg-text-secondary);
+  margin: -0.4rem 0 1.25rem 0;
+}
+
+/* Filtros rapidos de resultados (st.radio horizontal) como pills -- el
+   selector Claro/Oscuro del sidebar reusa la misma pill (mismo
+   componente st.radio horizontal), asi que hereda este estilo gratis. */
+
+div[data-testid="stRadio"] > div[role="radiogroup"] {
+  gap: 0.4rem;
+}
+
+div[data-testid="stRadio"] label {
+  border: 1px solid var(--alg-border);
+  border-radius: 999px;
+  padding: 0.3rem 0.9rem;
+  background: var(--alg-surface);
+}
+
+div[data-testid="stRadio"] label:has(input:checked) {
+  background: var(--alg-inverse-bg);
+  border-color: var(--alg-inverse-bg);
+}
+
+div[data-testid="stRadio"] label:has(input:checked) p {
+  color: var(--alg-inverse-text) !important;
+}
+
+/* El circulo nativo del radio no es el primer hijo del <label> (esta
+   version de Streamlit lo arma con un span vacio + divs anidados sin
+   testid ni clase estable) -- se lo identifica por estructura: es el
+   unico div de la fila que NO contiene un <p> (el texto de la opcion
+   siempre esta envuelto en un <p>, el circulo nunca). */
+div[data-testid="stRadio"] label div:not(:has(p)) {
+  display: none;
+}

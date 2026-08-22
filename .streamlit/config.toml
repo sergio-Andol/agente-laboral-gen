@@ -9,3 +9,24 @@
 # lo corre alguien sin experiencia de terminal.
 [browser]
 gatherUsageStats = false
+
+# toolbarMode="minimal" saca el menu hamburguesa / boton "Deploy" de la
+# esquina superior derecha -- ruido visual que delata "app de Streamlit
+# por defecto" y no aporta nada a un usuario final (ver ui/theme.css
+# para el resto del look and feel).
+[client]
+toolbarMode = "minimal"
+
+# Paleta propia (blanco/negro/grises, ver Fase 2B) -- Streamlit usa estos
+# valores para recolorear TODOS los widgets nativos (checkboxes, radio,
+# slider, tags de multiselect, foco de inputs), no solo lo que alcanza
+# ui/theme.css con CSS. font="sans serif" usa la fuente sans-serif del
+# sistema (sin descargar nada de internet); ui/theme.css afina el stack
+# exacto (-apple-system/Segoe UI/Roboto/...) sobre esta base.
+[theme]
+base = "light"
+primaryColor = "#111111"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F6F6F7"
+textColor = "#1A1A1A"
+font = "sans serif"
