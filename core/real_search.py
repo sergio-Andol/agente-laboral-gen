@@ -90,7 +90,7 @@ def _deduplicar(df):
     return df, cantidad_antes
 
 
-def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None, ciudad=""):
+def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None, ciudad="", on_progreso=None):
     """terminos: lista de strings a buscar (se consulta cada uno por
     separado). fuentes: lista de nombres de FUENTES_DISPONIBLES a usar
     (default: todas las disponibles hoy, o sea Computrabajo + Bumeran).
@@ -98,6 +98,11 @@ def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None, ciu
     core.constants.ZONAS). Bumeran ignora este parametro (no soporta
     scope de ciudad en esta implementacion, absorbe el kwarg via
     **_kwargs sin romper).
+
+    on_progreso: callback opcional callable(str), invocado en los puntos
+    reales de avance (antes/despues de cada fuente, antes de deduplicar,
+    antes de clasificar) -- para que la UI muestre feedback honesto sin
+    inventar pasos que no existen. None por defecto (no hace nada).
 
     Devuelve (df, diagnostico): df ya deduplicado y clasificado, mismo
     esquema de columnas que el modo DEMO -- SIN recortar a max_resultados
@@ -116,6 +121,10 @@ def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None, ciu
     a max_resultados queda para buscador_core._aplicar_filtros(), que
     corre DESPUES de deduplicar, clasificar y aplicar los filtros de
     categoria/seniority/palabras."""
+    def _avisar(mensaje):
+        if on_progreso:
+            on_progreso(mensaje)
+
     fuentes = fuentes or list(FUENTES_DISPONIBLES.keys())
     terminos = [t.strip() for t in (terminos or []) if t.strip()]
     diagnostico = {
@@ -134,6 +143,7 @@ def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None, ciu
             buscar_fn = FUENTES_DISPONIBLES.get(nombre_fuente)
             if not buscar_fn:
                 continue
+            _avisar(f"Buscando en {nombre_fuente}...")
             for termino in terminos:
                 if nombre_fuente in fuentes_fallidas:
                     # Ya fallo con este termino (ej. Playwright ausente):
@@ -158,6 +168,8 @@ def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None, ciu
                     print(f"[real_search] {nombre_fuente}: {e}")
                 except Exception as e:
                     print(f"[real_search] {nombre_fuente} ('{termino}'): error inesperado: {e}")
+            if nombre_fuente not in fuentes_fallidas:
+                _avisar(f"✓ {nombre_fuente}")
     finally:
         # Bumeran deja un navegador Playwright abierto (se reusa entre
         # terminos por velocidad) -- se cierra siempre al terminar la
@@ -175,11 +187,13 @@ def buscar_ofertas_reales(terminos, dias=2, max_resultados=10, fuentes=None, ciu
     # a constancia en 'avisos_fuentes', en vez de propagar la excepcion
     # hasta la UI.
     try:
+        _avisar("Eliminando duplicados...")
         df = pd.DataFrame(crudas)
         df, _ = _deduplicar(df)
         diagnostico["cant_tras_dedupe"] = len(df)
         diagnostico["conteo_por_fuente"] = df["fuente"].value_counts().to_dict()
 
+        _avisar("Analizando compatibilidad...")
         relevancias, categorias, decisiones, motivos, acciones = [], [], [], [], []
         for _, fila in df.iterrows():
             texto_titulo_desc = f"{fila['titulo']} {fila.get('descripcion', '')}"

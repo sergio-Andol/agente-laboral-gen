@@ -3,6 +3,7 @@ postulacion, sin historial -- solo vuelca lo que ya se muestra en
 pantalla, con un formato prolijo (freeze, autofiltro, colores por
 decision, links clickeables)."""
 import datetime
+import io
 from pathlib import Path
 
 import pandas as pd
@@ -107,15 +108,14 @@ def _formatear_hojas(writer):
                         c.fill = relleno
 
 
-def exportar_excel(nuevas, acciones_df, datos_resumen):
-    """Escribe RESUMEN + RESULTADOS (+ ACCIONES si hay alguna) en
-    resultados/YYYY-MM/<prefijo>_<timestamp>.xlsx -- prefijo "demo" o
-    "busqueda_real" segun datos_resumen["modo"]. Devuelve la ruta."""
-    prefijo = "busqueda_real" if datos_resumen.get("modo") == "real" else "demo"
-    archivo = construir_ruta_excel(prefijo=prefijo)
-    datos_resumen = dict(datos_resumen, archivo=str(archivo))
-
-    with pd.ExcelWriter(archivo, engine="openpyxl") as writer:
+def generar_excel_bytes(nuevas, acciones_df, datos_resumen):
+    """Arma RESUMEN + RESULTADOS (+ ACCIONES si hay alguna) enteramente
+    en memoria y devuelve los bytes del .xlsx -- no toca disco. Mismo
+    formato que antes (freeze, autofiltro, colores por decision, links
+    clickeables). Es la funcion que usa la UI para el boton de descarga
+    directa (sin paso "Exportar" previo ni archivo intermedio)."""
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         crear_hoja_resumen(writer, datos_resumen)
         nuevas.to_excel(writer, sheet_name="RESULTADOS", index=False)
         if not acciones_df.empty:
@@ -130,4 +130,25 @@ def exportar_excel(nuevas, acciones_df, datos_resumen):
         if "Sheet" in wb.sheetnames and wb["Sheet"].max_row == 1 and wb["Sheet"]["A1"].value is None:
             wb.remove(wb["Sheet"])
 
+    return buffer.getvalue()
+
+
+def nombre_archivo_descarga(datos_resumen):
+    """Nombre legible para el boton de descarga (ej.
+    agente_laboral_resultados_2026-08-21_03-18.xlsx) -- sin segundos, a
+    diferencia de guardar_excel_en_disco() (ese si los necesita para no
+    pisar archivos entre corridas rapidas)."""
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+    return f"agente_laboral_resultados_{timestamp}.xlsx"
+
+
+def guardar_excel_en_disco(nuevas, acciones_df, datos_resumen):
+    """Igual contenido que generar_excel_bytes(), pero ademas lo escribe
+    en resultados/YYYY-MM/<prefijo>_<timestamp>.xlsx. YA NO es parte del
+    flujo principal de la UI (que descarga directo desde memoria) -- se
+    mantiene disponible por compatibilidad para quien todavia necesite
+    un archivo en disco. Devuelve la ruta."""
+    prefijo = "busqueda_real" if datos_resumen.get("modo") == "real" else "demo"
+    archivo = construir_ruta_excel(prefijo=prefijo)
+    archivo.write_bytes(generar_excel_bytes(nuevas, acciones_df, datos_resumen))
     return archivo

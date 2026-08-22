@@ -89,7 +89,7 @@ def generar_resultados_demo(filtros=None):
     return nuevas, acciones_df, datos_resumen
 
 
-def ejecutar_busqueda_real(config):
+def ejecutar_busqueda_real(config, on_progreso=None):
     """Busca ofertas REALES (Computrabajo siempre; Bumeran si esta en
     'fuentes' Y Playwright esta disponible) y las clasifica con el mismo
     motor simple que el modo DEMO. Esto SI hace requests de red en vivo
@@ -111,7 +111,13 @@ def ejecutar_busqueda_real(config):
         'palabras_obligatorias', 'palabras_excluidas', 'zona',
         'modalidad', 'categorias', 'seniority'.
 
-    Sin postulacion, sin historial, sin tocar disco -- exportar_excel()
+    'on_progreso': callback opcional callable(str) -- se invoca en los
+    puntos reales de avance del pipeline (por fuente, dedupe, clasificar,
+    filtrar). Pensado para que la UI muestre feedback honesto durante la
+    busqueda (ver ui/app.py) sin inventar progreso que no existe. None
+    por defecto: no cambia nada para quien no lo pase.
+
+    Sin postulacion, sin historial, sin tocar disco -- generar_excel_bytes()
     sigue siendo un paso aparte y explicito. Devuelve (nuevas_df,
     acciones_df, datos_resumen), mismo shape que generar_resultados_demo.
     """
@@ -119,7 +125,7 @@ def ejecutar_busqueda_real(config):
     terminos = config.get("terminos") or []
     dias = config.get("dias", 2)
     max_resultados_busqueda = config.get("max_resultados", 10)
-    fuentes = config.get("fuentes")
+    fuentes = config.get("fuentes") or list(real_search.FUENTES_DISPONIBLES.keys())
     zona = config.get("zona") or "Toda Argentina"
     ciudad = constants.ZONAS.get(zona, {}).get("slug_computrabajo", "")
 
@@ -134,10 +140,12 @@ def ejecutar_busqueda_real(config):
     # hacia antes por el default viejo de esa funcion.
     nuevas, diagnostico_busqueda = real_search.buscar_ofertas_reales(
         terminos, dias=dias, max_resultados=max_resultados_busqueda,
-        fuentes=fuentes, ciudad=ciudad,
+        fuentes=fuentes, ciudad=ciudad, on_progreso=on_progreso,
     )
     cant_tras_dedupe = len(nuevas)
     conteo_por_fuente_crudo = diagnostico_busqueda.get("conteo_por_fuente", {})
+    if on_progreso:
+        on_progreso("Aplicando filtros...")
     nuevas = _aplicar_filtros(nuevas, config)
 
     acciones_df, conteo_acciones = classifier.construir_acciones(nuevas)
@@ -164,6 +172,11 @@ def ejecutar_busqueda_real(config):
         # muestra en la UI en vez de ocultarse en silencio.
         "conteo_por_fuente": conteo_por_fuente_crudo,
         "conteo_por_fuente_final": conteo_por_fuente_final,
+        # Fuentes REALMENTE pedidas en esta busqueda -- distinto de las
+        # keys de conteo_por_fuente, que solo aparecen si esa fuente trajo
+        # >=1 resultado. La UI la necesita para distinguir "Bumeran no
+        # estaba tildado" de "Bumeran estaba tildado pero dio 0".
+        "fuentes_solicitadas": fuentes,
         "avisos_fuentes": diagnostico_busqueda.get("avisos_fuentes", []),
         "alcance_geografico": zona,
         "postular": conteo_decision.get("POSTULAR", 0),
@@ -292,8 +305,22 @@ def _recortar_balanceado_por_fuente(df, tope):
     return df.loc[sorted(elegidos)].reset_index(drop=True)
 
 
-def exportar_excel(nuevas, acciones_df, datos_resumen):
-    """Escribe el Excel DEMO en resultados/YYYY-MM/ via core.exporter.
-    Nunca toca ningun historial (no existe en este proyecto). Devuelve la
-    ruta del archivo generado."""
-    return exporter.exportar_excel(nuevas, acciones_df, datos_resumen)
+def generar_excel_bytes(nuevas, acciones_df, datos_resumen):
+    """Arma el .xlsx en memoria (RESUMEN + RESULTADOS + ACCIONES si
+    corresponde) y devuelve los bytes -- no toca disco. Es lo que usa la
+    UI para el boton de descarga directa (ver ui/app.py)."""
+    return exporter.generar_excel_bytes(nuevas, acciones_df, datos_resumen)
+
+
+def nombre_archivo_excel(datos_resumen):
+    """Nombre legible para el boton de descarga, ej.
+    agente_laboral_resultados_2026-08-21_03-18.xlsx."""
+    return exporter.nombre_archivo_descarga(datos_resumen)
+
+
+def guardar_excel_en_disco(nuevas, acciones_df, datos_resumen):
+    """Compatibilidad: escribe el Excel en resultados/YYYY-MM/ via
+    core.exporter, ademas de en memoria. Ya NO es parte del flujo
+    principal de la UI. Nunca toca ningun historial (no existe en este
+    proyecto). Devuelve la ruta del archivo generado."""
+    return exporter.guardar_excel_en_disco(nuevas, acciones_df, datos_resumen)
